@@ -1,0 +1,31 @@
+app = "sentinal-mt5"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "4000"
+  HOST = "0.0.0.0"
+  SERVE_WEB = "true"
+  TICK_INTERVAL_MS = "400"
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  # The engine holds its book in memory, so the machine must stay up to keep
+  # trading. Stopping it on idle would flatten the session state.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

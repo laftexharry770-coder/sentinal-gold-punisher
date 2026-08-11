@@ -35,17 +35,33 @@ accounts at MetaApi.
 ### Hosting it
 
 The production build is one Node process serving the API, the WebSocket feed and the
-terminal, so any Node host works:
+terminal, so any Node host works.
+
+**Render** — `render.yaml` is a ready blueprint. In the Render dashboard choose
+**New → Blueprint**, pick this repo and branch, and it builds and deploys with no
+further configuration. Health check is `/api/health`.
+
+**Fly.io** — `fly.toml` builds from the Dockerfile:
+
+```bash
+fly launch --copy-config --no-deploy && fly deploy
+```
+
+**Railway / Koyeb / a VPS** — the Dockerfile is picked up automatically:
 
 ```bash
 docker build -t sentinal-mt5 .
 docker run -p 4000:4000 sentinal-mt5     # http://localhost:4000
 ```
 
-On Render / Railway / Fly / a VPS, point the service at this repo with build command
-`npm ci && npm run build`, start command `npm start`, and expose `PORT` (the server
-reads it). WebSocket support must be enabled on the host — the terminal streams every
-tick over `/ws`.
+Two things to know before hosting it:
+
+- **WebSockets must be enabled** on the host. The terminal streams every tick over
+  `/ws`; without it the screens render but never update.
+- **State lives in memory.** Accounts, the position book and the recovery queue are
+  rebuilt from the seed accounts on every restart, so a host that sleeps on idle (such
+  as Render's free instance type) stops the engine and clears the session. Use an
+  always-on instance if you want it trading continuously.
 
 ## Multiple trades at once
 

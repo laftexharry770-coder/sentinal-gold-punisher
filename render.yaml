@@ -1,0 +1,22 @@
+# Render blueprint — one web service running the API, WebSocket feed and terminal.
+services:
+  - type: web
+    name: sentinal-mt5
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: SERVE_WEB
+        value: "true"
+      # Quote cadence for the simulated XAUUSD feed, milliseconds per tick.
+      - key: TICK_INTERVAL_MS
+        value: "400"
+      # Set in the Render dashboard to route live orders through MetaApi.
+      - key: METAAPI_TOKEN
+        sync: false
+      - key: METAAPI_REGION
+        value: new-york
