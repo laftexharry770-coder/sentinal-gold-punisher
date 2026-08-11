@@ -41,11 +41,25 @@ terminal, so any Node host works.
 **New → Blueprint**, pick this repo and branch, and it builds and deploys with no
 further configuration. Health check is `/api/health`.
 
-**Fly.io** — `fly.toml` builds from the Dockerfile:
+**Fly.io** — `fly.toml` builds from the Dockerfile and keeps one machine awake so the
+position book survives:
 
 ```bash
-fly launch --copy-config --no-deploy && fly deploy
+fly auth login
+fly launch --copy-config --no-deploy   # choose a unique app name when prompted
+fly deploy
+fly open                               # opens the terminal in your browser
 ```
+
+`app = "sentinal-mt5"` in `fly.toml` is almost certainly taken globally — `fly launch`
+will ask for another name and rewrite the file. To route live orders through MetaApi,
+set the token as a secret rather than an env var:
+
+```bash
+fly secrets set METAAPI_TOKEN=... METAAPI_REGION=new-york
+```
+
+`fly logs` tails the engine; `/api/health` is wired as the health check.
 
 **Railway / Koyeb / a VPS** — the Dockerfile is picked up automatically:
 
