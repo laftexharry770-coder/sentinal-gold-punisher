@@ -39,7 +39,11 @@ jobs:
           npm run build --workspace engine
           npm run build:standalone --workspace web
 
+      # enablement turns Pages on for the repository the first time this runs,
+      # so no manual settings change is needed.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
