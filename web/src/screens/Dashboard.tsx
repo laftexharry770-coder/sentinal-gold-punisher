@@ -12,7 +12,8 @@ function QuickTrade() {
   const { accounts, config, quote } = useTerminal();
   const [accountId, setAccountId] = useState('');
   const [volume, setVolume] = useState(config.lotSize);
-  const [legs, setLegs] = useState(2);
+  // The ticket opens with the same burst size the engine uses.
+  const [legs, setLegs] = useState(config.entriesPerSignal);
   const [stopLossUsd, setStopLossUsd] = useState(config.stopLossUsd);
   const [takeProfitUsd, setTakeProfitUsd] = useState(config.takeProfitUsd);
   const [busy, setBusy] = useState<'buy' | 'sell' | null>(null);

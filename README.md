@@ -32,20 +32,40 @@ npm run typecheck    # all workspaces
 Copy `.env.example` to `.env` to change the port, the simulated feed, or to point
 accounts at MetaApi.
 
+### Hosting it
+
+The production build is one Node process serving the API, the WebSocket feed and the
+terminal, so any Node host works:
+
+```bash
+docker build -t sentinal-mt5 .
+docker run -p 4000:4000 sentinal-mt5     # http://localhost:4000
+```
+
+On Render / Railway / Fly / a VPS, point the service at this repo with build command
+`npm ci && npm run build`, start command `npm start`, and expose `PORT` (the server
+reads it). WebSocket support must be enabled on the host — the terminal streams every
+tick over `/ws`.
+
 ## Multiple trades at once
 
 Every layer of the engine is built around a book of concurrent legs rather than a
 single position.
 
-| Control | What it does |
-| --- | --- |
-| `entriesPerSignal` | Legs fired **together** on one qualified signal (default 2) |
-| `maxConcurrentPositions` | Hard cap on simultaneously open bot legs (default 8) |
-| `maxPositionsPerDirection` | Longs and shorts capped separately (default 5) |
-| `entrySpacingUsd` | Minimum gold-price distance from the nearest same-side leg, so stacked entries are not all at one price |
-| `allowHedging` | Long and short legs open at the same time |
-| `signalCooldownMs` | Pause between two entry bursts |
-| `basketTakeProfitUsd` / `basketStopLossUsd` | Close the entire book together on its combined result |
+| Control | Default | What it does |
+| --- | --- | --- |
+| `entriesPerSignal` | 4 | Legs fired **together** on one qualified signal |
+| `maxConcurrentPositions` | 24 | Hard cap on simultaneously open bot legs |
+| `maxPositionsPerDirection` | 12 | Longs and shorts capped separately |
+| `entrySpacingUsd` | 0.15 | Minimum gold-price distance from the nearest same-side leg, so stacked entries are not all at one price |
+| `allowHedging` | on | Long and short legs open at the same time |
+| `signalCooldownMs` | 1500 | Pause between two entry bursts |
+| `basketTakeProfitUsd` / `basketStopLossUsd` | $15 / off | Close the entire book together on its combined result |
+
+A full book at these defaults is 24 legs × 0.01 lots = 0.24 lots, roughly $158 of
+margin at 1:500, risking $48 of stops against $24 of targets. The daily guards
+($150 loss, 1200 trades) are sized to match. Every value is editable on the Trade
+Settings screen and takes effect on the next tick.
 
 A burst is truncated, never over-filled: the engine opens
 `min(entriesPerSignal, remaining global capacity, remaining directional capacity)`
