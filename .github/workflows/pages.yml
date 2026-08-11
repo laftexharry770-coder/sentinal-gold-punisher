@@ -1,24 +1,22 @@
-name: Publish terminal to GitHub Pages
+name: Publish terminal to gh-pages
 
-# The standalone build runs the whole engine in the browser, so Pages can host
-# it as a plain static page — no server, no secrets.
+# The standalone build runs the whole engine in the browser, so the site is a
+# single static page. This publishes it to the gh-pages branch, which GitHub
+# Pages serves with "Deploy from a branch".
 on:
   push:
     branches: [main, claude/sentinal-mt5-handoff-602958]
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
-# Let a running deploy finish; queue at most one more.
 concurrency:
-  group: pages
+  group: gh-pages
   cancel-in-progress: false
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,22 +37,21 @@ jobs:
           npm run build --workspace engine
           npm run build:standalone --workspace web
 
-      # Requires Pages to be switched on once, under
-      # Settings -> Pages -> Build and deployment -> Source: GitHub Actions.
-      # The workflow token cannot create the site itself ("Resource not
-      # accessible by integration"), so this step fails until that is done.
-      - uses: actions/configure-pages@v5
+      - name: Push the built page to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # .nojekyll stops Pages running the site through Jekyll, which would
+          # ignore files it does not recognise and slow every deploy down.
+          touch web/dist-standalone/.nojekyll
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: web/dist-standalone
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          cd web/dist-standalone
+          git init -q
+          git checkout -qb gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish terminal from ${GITHUB_SHA}"
+          # The branch only ever holds the current build, so replace it wholesale.
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
