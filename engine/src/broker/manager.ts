@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { Emitter } from '../emitter.js';
 import {
   DEFAULT_COPY_SETTINGS,
   type AccountConfig,
@@ -9,8 +9,14 @@ import {
   type Tick,
 } from '@sentinal/shared';
 import { round, uid } from '../util.js';
-import { MetaApiAccount } from './metaapi.js';
 import { TradingAccount } from './account.js';
+
+/**
+ * Builds an account for a provider the core does not implement itself.
+ * The server registers the MetaApi adapter this way, which keeps the engine
+ * free of transport code and lets it run unchanged in a browser.
+ */
+export type AccountFactory = (config: AccountConfig) => TradingAccount;
 
 export interface NewAccountInput {
   name: string;
@@ -28,9 +34,15 @@ export interface NewAccountInput {
 }
 
 /** Owns every linked account and fans the market feed out to all of them. */
-export class AccountManager extends EventEmitter {
+export class AccountManager extends Emitter {
   private accounts = new Map<string, TradingAccount>();
+  private factories = new Map<AccountConfig['provider'], AccountFactory>();
   private lastTick: Tick | null = null;
+
+  /** Teaches the manager how to build accounts for a remote provider. */
+  registerProvider(provider: AccountConfig['provider'], factory: AccountFactory): void {
+    this.factories.set(provider, factory);
+  }
 
   list(): TradingAccount[] {
     return [...this.accounts.values()];
@@ -77,8 +89,8 @@ export class AccountManager extends EventEmitter {
       if (master) config.copy = { ...config.copy, masterId: master.id };
     }
 
-    const account =
-      config.provider === 'metaapi' ? new MetaApiAccount(config) : new TradingAccount(config);
+    const factory = this.factories.get(config.provider);
+    const account = factory ? factory(config) : new TradingAccount(config);
 
     this.wire(account);
     this.accounts.set(account.id, account);
@@ -86,11 +98,10 @@ export class AccountManager extends EventEmitter {
     // accept mirrored legs — without waiting for the next tick.
     if (this.lastTick) account.onTick(this.lastTick);
 
-    if (account instanceof MetaApiAccount) {
-      void account.connect().catch(() => {
-        /* connectionError is surfaced through account state */
-      });
-    }
+    // Local accounts resolve immediately; remote ones dial their broker.
+    void account.connect().catch(() => {
+      /* connectionError is surfaced through account state */
+    });
 
     this.emit('accounts', this.states());
     return account;
@@ -113,7 +124,7 @@ export class AccountManager extends EventEmitter {
     const account = this.accounts.get(id);
     if (!account) return false;
     account.closeAll('manual');
-    if (account instanceof MetaApiAccount) account.disconnect();
+    account.disconnect();
     account.removeAllListeners();
     this.accounts.delete(id);
     // Orphaned followers fall back to standalone rather than silently idling.

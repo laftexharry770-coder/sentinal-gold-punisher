@@ -1,7 +1,16 @@
-import { randomUUID } from 'node:crypto';
+/** Web Crypto is global in Node 18+ and in every supported browser. */
+function randomId(): string {
+  const webCrypto = globalThis.crypto;
+  if (webCrypto?.randomUUID) return webCrypto.randomUUID().replace(/-/g, '');
+  if (webCrypto?.getRandomValues) {
+    const bytes = webCrypto.getRandomValues(new Uint8Array(8));
+    return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return Math.random().toString(16).slice(2).padEnd(12, '0');
+}
 
 export function uid(prefix = ''): string {
-  const id = randomUUID().replace(/-/g, '').slice(0, 12);
+  const id = randomId().slice(0, 12);
   return prefix ? `${prefix}_${id}` : id;
 }
 

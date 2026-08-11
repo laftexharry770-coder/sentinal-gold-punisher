@@ -1,15 +1,14 @@
-import { EventEmitter } from 'node:events';
+import { Emitter } from './emitter.js';
 import type { LogEntry, LogLevel } from '@sentinal/shared';
 import { uid } from './util.js';
 
 /** In-memory ring buffer of terminal log lines, streamed to the web client. */
-export class Journal extends EventEmitter {
+export class Journal extends Emitter {
   private entries: LogEntry[] = [];
   private readonly limit: number;
 
   constructor(limit = 400) {
     super();
-    this.setMaxListeners(50);
     this.limit = limit;
   }
 

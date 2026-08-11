@@ -1,12 +1,5 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  type ReactNode,
-} from 'react';
+import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
+import { api } from './api';
 import {
   DEFAULT_BOT_CONFIG,
   type AccountState,
@@ -118,44 +111,14 @@ const TerminalContext = createContext<TerminalState>(EMPTY);
 
 export function TerminalProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reduce, EMPTY);
-  const retry = useRef(0);
 
   useEffect(() => {
-    let socket: WebSocket | null = null;
-    let timer: number | undefined;
-    let disposed = false;
-
-    const connect = () => {
-      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
-
-      socket.onopen = () => {
-        retry.current = 0;
-        dispatch({ type: 'connection', connected: true });
-      };
-      socket.onmessage = (event) => {
-        try {
-          dispatch({ type: 'message', message: JSON.parse(event.data as string) as ServerMessage });
-        } catch {
-          /* malformed frame — drop it rather than tearing the socket down */
-        }
-      };
-      socket.onclose = () => {
-        dispatch({ type: 'connection', connected: false });
-        if (disposed) return;
-        // Back off up to 8s so a restarting server is not hammered.
-        retry.current = Math.min(retry.current + 1, 8);
-        timer = window.setTimeout(connect, retry.current * 1000);
-      };
-      socket.onerror = () => socket?.close();
-    };
-
-    connect();
-    return () => {
-      disposed = true;
-      if (timer) window.clearTimeout(timer);
-      socket?.close();
-    };
+    // The backend decides whether this is a socket to the execution server or
+    // the engine running in this tab.
+    return api.subscribe({
+      onMessage: (message) => dispatch({ type: 'message', message }),
+      onStatus: (connected) => dispatch({ type: 'connection', connected }),
+    });
   }, []);
 
   return <TerminalContext.Provider value={state}>{children}</TerminalContext.Provider>;

@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { Emitter } from '../emitter.js';
 import { roundPrice, type Candle, type SymbolSpec, type Tick } from '@sentinal/shared';
 import { clamp, createRng, gaussian } from '../util.js';
 
@@ -18,11 +18,11 @@ export interface FeedOptions {
  * a live broker. Swap `start()` for a real socket subscription to go live —
  * everything downstream only consumes the `tick` / `candle` events.
  */
-export class MarketFeed extends EventEmitter {
+export class MarketFeed extends Emitter {
   readonly spec: SymbolSpec;
   private readonly opts: FeedOptions;
   private readonly rng: () => number;
-  private timer: NodeJS.Timeout | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
 
   private mid: number;
   private volatility = 0.9;
@@ -35,7 +35,6 @@ export class MarketFeed extends EventEmitter {
 
   constructor(opts: FeedOptions) {
     super();
-    this.setMaxListeners(50);
     this.opts = opts;
     this.spec = opts.spec;
     this.rng = createRng(opts.seed);

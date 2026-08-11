@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { Emitter } from '../emitter.js';
 import {
   commissionFor,
   entryPrice,
@@ -52,7 +52,7 @@ let ticketSeq = 50_000_000;
  * stop or target is touched. Remote providers subclass this and override the
  * order entry points while reusing the bookkeeping.
  */
-export class TradingAccount extends EventEmitter {
+export class TradingAccount extends Emitter {
   readonly id: string;
   config: AccountConfig;
   balance: number;
@@ -66,7 +66,6 @@ export class TradingAccount extends EventEmitter {
 
   constructor(config: AccountConfig) {
     super();
-    this.setMaxListeners(50);
     this.id = config.id;
     this.config = config;
     this.balance = config.initialBalance;
@@ -193,6 +192,18 @@ export class TradingAccount extends EventEmitter {
     this.emit('closed', trade, position, this);
     this.emit('changed', this);
     return trade;
+  }
+
+  /**
+   * Connection lifecycle. A local account is live the moment it exists;
+   * remote providers override these to dial and drop their broker session.
+   */
+  async connect(): Promise<void> {
+    this.connected = true;
+  }
+
+  disconnect(): void {
+    /* nothing to tear down for a local account */
   }
 
   /**

@@ -1,6 +1,7 @@
-import { EventEmitter } from 'node:events';
+import { Emitter } from '../emitter.js';
 import {
   DEFAULT_BOT_CONFIG,
+  type Candle,
   getSymbolSpec,
   type BotConfig,
   type BotStats,
@@ -20,7 +21,7 @@ import { StrategyEngine } from './strategy.js';
 /** Positions the bot itself is responsible for (copies belong to the copier). */
 const BOT_ORIGINS = new Set(['bot', 'recovery']);
 
-export class BotEngine extends EventEmitter {
+export class BotEngine extends Emitter {
   config: BotConfig = { ...DEFAULT_BOT_CONFIG, zeroLoss: { ...DEFAULT_BOT_CONFIG.zeroLoss } };
   private readonly strategy = new StrategyEngine();
   private readonly recoveries = new Map<string, RecoveryEngine>();
@@ -58,6 +59,24 @@ export class BotEngine extends EventEmitter {
   /* --------------------------------------------------------------- */
   /* Lifecycle                                                        */
   /* --------------------------------------------------------------- */
+
+  /**
+   * Warms the indicator set from historical bars.
+   *
+   * Without this the strategy needs ~34 live ticks before it reports ready, so
+   * an operator arming the bot would watch it do nothing for a quarter of a
+   * minute. Loading history first is what a terminal does anyway.
+   */
+  prime(candles: Candle[]): void {
+    for (const candle of candles) {
+      this.strategy.update({
+        symbol: this.config.symbol,
+        bid: candle.close,
+        ask: candle.close,
+        time: candle.time,
+      });
+    }
+  }
 
   start(): void {
     if (this.running) return;

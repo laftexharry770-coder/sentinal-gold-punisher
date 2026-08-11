@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:standalone": "vite build --config vite.standalone.config.ts && node ../scripts/build-standalone.mjs"
   },
   "dependencies": {
+    "@sentinal/engine": "*",
     "@sentinal/shared": "*",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

@@ -1,10 +1,19 @@
 import { Router, type Request, type Response } from 'express';
-import { getSymbolSpec, roundLot, type BotConfig, type CopySettings, type Side } from '@sentinal/shared';
-import type { Runtime } from './app.js';
-
-function bad(res: Response, message: string): void {
-  res.status(400).json({ error: message });
-}
+import {
+  CommandError,
+  addAccount,
+  closeAll,
+  closePosition,
+  modifyPosition,
+  placeOrder,
+  removeAccount,
+  startBot,
+  stopBot,
+  updateAccount,
+  updateBotConfig,
+  type Runtime,
+} from '@sentinal/engine';
+import type { BotConfig, CopySettings } from '@sentinal/shared';
 
 function asNumber(value: unknown): number | undefined {
   if (value === null || value === undefined || value === '') return undefined;
@@ -25,7 +34,7 @@ function asBoolean(value: unknown): boolean | undefined {
 }
 
 /** Whitelist + coerce the bot config patch coming from the settings screen. */
-function parseBotPatch(body: Record<string, unknown>): Partial<BotConfig> {
+export function parseBotPatch(body: Record<string, unknown>): Partial<BotConfig> {
   const patch: Partial<BotConfig> = {};
   const numeric: (keyof BotConfig)[] = [
     'lotSize',
@@ -87,7 +96,7 @@ function parseBotPatch(body: Record<string, unknown>): Partial<BotConfig> {
   return patch;
 }
 
-function parseCopyPatch(body: Record<string, unknown>): Partial<CopySettings> {
+export function parseCopyPatch(body: Record<string, unknown>): Partial<CopySettings> {
   const patch: Partial<CopySettings> = {};
   for (const key of ['multiplier', 'fixedLot', 'minLot', 'maxLot', 'maxSlippage'] as const) {
     const value = asNumber(body[key]);
@@ -109,6 +118,15 @@ function parseCopyPatch(body: Record<string, unknown>): Partial<CopySettings> {
   return patch;
 }
 
+/** Turns a rejected command into the status the caller should see. */
+function fail(res: Response, err: unknown): void {
+  if (err instanceof CommandError) {
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  res.status(500).json({ error: err instanceof Error ? err.message : 'unexpected error' });
+}
+
 export function createRouter(runtime: Runtime): Router {
   const router = Router();
   const { accounts, bot, journal } = runtime;
@@ -125,52 +143,50 @@ export function createRouter(runtime: Runtime): Router {
 
   router.post('/accounts', (req: Request, res: Response) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const name = typeof body.name === 'string' ? body.name.trim() : '';
-    const login = typeof body.login === 'string' ? body.login.trim() : '';
-    const server = typeof body.server === 'string' ? body.server.trim() : '';
-    if (!name || !login || !server) return bad(res, 'name, login and server are required');
-
-    const provider = body.provider === 'metaapi' || body.provider === 'mt5' ? body.provider : 'sim';
-    const role = body.role === 'master' || body.role === 'slave' ? body.role : 'standalone';
-
-    const account = accounts.add({
-      name,
-      login,
-      server,
-      provider,
-      role,
-      broker: typeof body.broker === 'string' ? body.broker : undefined,
-      currency: typeof body.currency === 'string' ? body.currency : undefined,
-      leverage: asNumber(body.leverage),
-      initialBalance: asNumber(body.initialBalance),
-      metaApiAccountId: typeof body.metaApiAccountId === 'string' ? body.metaApiAccountId : undefined,
-      copy: body.copy && typeof body.copy === 'object' ? parseCopyPatch(body.copy as Record<string, unknown>) : undefined,
-    });
-
-    journal.write('success', account.id, `Linked ${account.config.name} (${account.config.provider}) on ${account.config.server}`);
-    res.status(201).json(account.state());
+    try {
+      const state = addAccount(runtime, {
+        name: typeof body.name === 'string' ? body.name.trim() : '',
+        login: typeof body.login === 'string' ? body.login.trim() : '',
+        server: typeof body.server === 'string' ? body.server.trim() : '',
+        provider: body.provider === 'metaapi' || body.provider === 'mt5' ? body.provider : 'sim',
+        role: body.role === 'master' || body.role === 'slave' ? body.role : 'standalone',
+        broker: typeof body.broker === 'string' ? body.broker : undefined,
+        currency: typeof body.currency === 'string' ? body.currency : undefined,
+        leverage: asNumber(body.leverage),
+        initialBalance: asNumber(body.initialBalance),
+        metaApiAccountId: typeof body.metaApiAccountId === 'string' ? body.metaApiAccountId : undefined,
+        copy: body.copy && typeof body.copy === 'object' ? parseCopyPatch(body.copy as Record<string, unknown>) : undefined,
+      });
+      res.status(201).json(state);
+    } catch (err) {
+      fail(res, err);
+    }
   });
 
   router.patch('/accounts/:id', (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const patch: Record<string, unknown> = {};
-    if (typeof body.name === 'string') patch.name = body.name;
-    if (body.role === 'master' || body.role === 'slave' || body.role === 'standalone') patch.role = body.role;
-    if (body.copy && typeof body.copy === 'object') patch.copy = parseCopyPatch(body.copy as Record<string, unknown>);
-
-    const account = accounts.update(req.params.id as string, patch);
-    if (!account) return res.status(404).json({ error: 'account not found' });
-    res.json(account.state());
+    try {
+      res.json(
+        updateAccount(runtime, req.params.id as string, {
+          name: typeof body.name === 'string' ? body.name : undefined,
+          role:
+            body.role === 'master' || body.role === 'slave' || body.role === 'standalone'
+              ? body.role
+              : undefined,
+          copy: body.copy && typeof body.copy === 'object' ? parseCopyPatch(body.copy as Record<string, unknown>) : undefined,
+        }),
+      );
+    } catch (err) {
+      fail(res, err);
+    }
   });
 
   router.delete('/accounts/:id', (req, res) => {
-    const id = req.params.id as string;
-    const account = accounts.get(id);
-    if (!account) return res.status(404).json({ error: 'account not found' });
-    const name = account.config.name;
-    accounts.remove(id);
-    journal.write('warn', null, `Unlinked ${name}`);
-    res.json({ ok: true });
+    try {
+      res.json(removeAccount(runtime, req.params.id as string));
+    } catch (err) {
+      fail(res, err);
+    }
   });
 
   /* ---------------------------- trading ----------------------------- */
@@ -178,81 +194,65 @@ export function createRouter(runtime: Runtime): Router {
   router.get('/positions', (_req, res) => res.json(accounts.allPositions()));
 
   router.get('/history', (req, res) => {
-    const limit = asNumber(req.query.limit) ?? 200;
-    res.json(accounts.allHistory(limit));
+    res.json(accounts.allHistory(asNumber(req.query.limit) ?? 200));
   });
 
   router.post('/orders', async (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const accountId = typeof body.accountId === 'string' ? body.accountId : accounts.primary()?.id;
-    if (!accountId) return bad(res, 'no account available');
-    const account = accounts.get(accountId);
-    if (!account) return res.status(404).json({ error: 'account not found' });
-
-    const side: Side | undefined = body.side === 'buy' || body.side === 'sell' ? body.side : undefined;
-    if (!side) return bad(res, 'side must be buy or sell');
-
-    const symbol = typeof body.symbol === 'string' && body.symbol ? body.symbol.toUpperCase() : bot.config.symbol;
-    const spec = getSymbolSpec(symbol);
-    const volume = roundLot(spec, asNumber(body.volume) ?? bot.config.lotSize);
-    const legs = Math.max(1, Math.min(50, Math.round(asNumber(body.legs) ?? 1)));
-
-    const result = await bot.manualOrder(account, {
-      symbol,
-      side,
-      volume,
-      legs,
-      stopLossUsd: body.stopLossUsd === null ? null : asNumber(body.stopLossUsd) ?? bot.config.stopLossUsd,
-      takeProfitUsd: body.takeProfitUsd === null ? null : asNumber(body.takeProfitUsd) ?? bot.config.takeProfitUsd,
-      comment: typeof body.comment === 'string' ? body.comment : undefined,
-    });
-
-    if (result.opened.length === 0) {
-      return res.status(422).json({ error: result.errors[0] ?? 'order rejected', errors: result.errors });
+    try {
+      const result = await placeOrder(runtime, {
+        accountId: typeof body.accountId === 'string' ? body.accountId : undefined,
+        symbol: typeof body.symbol === 'string' ? body.symbol : undefined,
+        side: body.side as 'buy' | 'sell',
+        volume: asNumber(body.volume),
+        legs: asNumber(body.legs),
+        stopLossUsd: 'stopLossUsd' in body ? asNullableNumber(body.stopLossUsd) ?? null : undefined,
+        takeProfitUsd: 'takeProfitUsd' in body ? asNullableNumber(body.takeProfitUsd) ?? null : undefined,
+        comment: typeof body.comment === 'string' ? body.comment : undefined,
+      });
+      res.status(201).json(result);
+    } catch (err) {
+      fail(res, err);
     }
-    res.status(201).json({ opened: result.opened, errors: result.errors });
   });
 
   router.post('/positions/:id/close', async (req, res) => {
-    const id = req.params.id as string;
-    const account = accounts.list().find((a) => a.getPosition(id));
-    if (!account) return res.status(404).json({ error: 'position not found' });
-    const trade = await account.submitClose(id, 'manual');
-    if (!trade) return res.status(422).json({ error: 'close rejected by broker' });
-    journal.write('trade', account.id, `Closed #${trade.ticket} manually (${trade.netProfit >= 0 ? '+' : ''}${trade.netProfit.toFixed(2)})`);
-    res.json(trade);
+    try {
+      res.json(await closePosition(runtime, req.params.id as string));
+    } catch (err) {
+      fail(res, err);
+    }
   });
 
   router.post('/positions/close-all', (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const accountId = typeof body.accountId === 'string' ? body.accountId : undefined;
-    const side = body.side === 'buy' || body.side === 'sell' ? body.side : undefined;
-    const profitableOnly = asBoolean(body.profitableOnly) ?? false;
-
-    const targets = accountId ? [accounts.get(accountId)].filter(Boolean) : accounts.list();
-    let closed = 0;
-    for (const account of targets) {
-      if (!account) continue;
-      const trades = account.closeAll('manual', (p) => {
-        if (side && p.side !== side) return false;
-        if (profitableOnly && p.profit <= 0) return false;
-        return true;
-      });
-      closed += trades.length;
+    try {
+      res.json(
+        closeAll(runtime, {
+          accountId: typeof body.accountId === 'string' ? body.accountId : undefined,
+          side: body.side === 'buy' || body.side === 'sell' ? body.side : undefined,
+          profitableOnly: asBoolean(body.profitableOnly) ?? false,
+        }),
+      );
+    } catch (err) {
+      fail(res, err);
     }
-    journal.write('warn', accountId ?? null, `Bulk close executed — ${closed} position(s)`);
-    res.json({ closed });
   });
 
   router.patch('/positions/:id', (req, res) => {
-    const id = req.params.id as string;
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const account = accounts.list().find((a) => a.getPosition(id));
-    if (!account) return res.status(404).json({ error: 'position not found' });
-    const stopLoss = asNullableNumber(body.stopLoss) ?? null;
-    const takeProfit = asNullableNumber(body.takeProfit) ?? null;
-    account.modify(id, stopLoss, takeProfit);
-    res.json(account.getPosition(id) ?? null);
+    try {
+      res.json(
+        modifyPosition(
+          runtime,
+          req.params.id as string,
+          asNullableNumber(body.stopLoss) ?? null,
+          asNullableNumber(body.takeProfit) ?? null,
+        ),
+      );
+    } catch (err) {
+      fail(res, err);
+    }
   });
 
   /* ------------------------------ bot ------------------------------- */
@@ -260,21 +260,17 @@ export function createRouter(runtime: Runtime): Router {
   router.get('/bot', (_req, res) => res.json({ config: bot.config, stats: bot.stats() }));
 
   router.patch('/bot/config', (req, res) => {
-    const patch = parseBotPatch((req.body ?? {}) as Record<string, unknown>);
-    const updated = bot.updateConfig(patch);
-    journal.write('info', null, 'Strategy settings updated');
-    res.json({ config: updated, stats: bot.stats() });
+    try {
+      res.json(updateBotConfig(runtime, parseBotPatch((req.body ?? {}) as Record<string, unknown>)));
+    } catch (err) {
+      fail(res, err);
+    }
   });
 
-  router.post('/bot/start', (_req, res) => {
-    bot.start();
-    res.json({ config: bot.config, stats: bot.stats() });
-  });
+  router.post('/bot/start', (_req, res) => res.json(startBot(runtime)));
 
   router.post('/bot/stop', (req, res) => {
-    const flatten = asBoolean((req.body ?? {}).closePositions) ?? false;
-    bot.stop(flatten);
-    res.json({ config: bot.config, stats: bot.stats() });
+    res.json(stopBot(runtime, asBoolean((req.body ?? {}).closePositions) ?? false));
   });
 
   router.get('/recoveries', (_req, res) => res.json(bot.listRecoveries()));

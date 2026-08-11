@@ -16,12 +16,11 @@ import type {
   ServerMessage,
   Tick,
 } from '@sentinal/shared';
-import { createRuntime, seedDemoAccounts } from './app.js';
+import { createServerRuntime } from './app.js';
 import { config } from './config.js';
 import { createRouter } from './routes.js';
 
-const runtime = createRuntime();
-seedDemoAccounts(runtime);
+const runtime = createServerRuntime();
 
 const app = express();
 app.use(cors());

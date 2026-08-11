@@ -6,11 +6,35 @@ accounts, and postpones recovery trades until they project a net-positive close.
 
 ```
 web/      React + Vite terminal (Cobalt Dark, desktop / Android / iOS layouts)
-server/   Execution engine, market feed, broker accounts, REST + WebSocket API
-shared/   Domain model and trade math used by both sides
+engine/   Isomorphic trading engine: feed, accounts, bot, copier, recovery
+server/   REST + WebSocket API, MetaApi routing, static hosting
+shared/   Domain model and trade math used everywhere
 ```
 
-## Running it
+The engine has no transport or filesystem dependencies, so it runs unchanged in
+Node and in a browser tab. That is what makes the two builds below possible.
+
+## Two ways to run it
+
+**Standalone (no server).** One self-contained HTML file with the engine running
+in the page — open it and it trades:
+
+```bash
+npm install
+npm run build --workspace shared && npm run build --workspace engine
+npm run build:standalone --workspace web    # -> web/dist-standalone/index.html
+```
+
+Push it to any static host. The committed GitHub Pages workflow does exactly
+this on every push; enable it once under **Settings → Pages → Source: GitHub
+Actions** and the terminal is served from your repository. Everything except
+MetaApi routing works, since live orders need a server-held token.
+
+**Client/server.** The Node execution server owns the book and streams it to any
+number of connected terminals — use this when the engine must keep running while
+no browser is open, or when routing real orders through MetaApi.
+
+## Development
 
 ```bash
 npm install
@@ -137,11 +161,11 @@ the same pass.
 - **`sim`** — full local simulation: spread, commission, margin, stop/target execution.
   This is what the demo accounts use.
 - **`metaapi`** — routes real orders through the MetaApi cloud REST API
-  (`server/src/broker/metaapi.ts`). Needs `METAAPI_TOKEN` in the server environment plus
+  (`server/src/broker/metaapi.ts`, registered onto the engine as a provider). Needs `METAAPI_TOKEN` in the server environment plus
   a provisioned MetaApi account id; without them the account reports itself offline
   rather than quietly trading a simulation.
 
-The market feed is a pluggable component (`server/src/market/feed.ts`): it synthesises
+The market feed is a pluggable component (`engine/src/market/feed.ts`): it synthesises
 XAUUSD ticks with volatility clustering by default, and anything downstream only
 consumes its `tick` / `candle` events, so a live feed can replace it without touching
 the engine.
