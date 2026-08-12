@@ -5,7 +5,12 @@ name: Publish terminal to gh-pages
 # Pages serves with "Deploy from a branch".
 on:
   push:
-    branches: [main, claude/sentinal-mt5-handoff-602958]
+    # The development branch has been known by both names; publishing follows
+    # whichever one receives the commit.
+    branches:
+      - main
+      - claude/sentinal-gold-punisher
+      - claude/sentinal-mt5-handoff-602958
   workflow_dispatch:
 
 permissions:
