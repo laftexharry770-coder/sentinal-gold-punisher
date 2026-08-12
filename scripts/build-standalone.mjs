@@ -77,6 +77,10 @@ async function main() {
   await writeFile(htmlPath, html);
   await rm(assetDir, { recursive: true, force: true });
 
+  // Static hosts serve 404.html for unknown paths. Shipping the app there means
+  // a mistyped or deep URL still opens the terminal instead of a host error.
+  await writeFile(path.join(dist, '404.html'), html);
+
   // Artifact variant: page content only, since the host supplies the document
   // wrapper. Keep the title so the tab and gallery card are named correctly.
   const title = html.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? 'Sentinal MT5';
