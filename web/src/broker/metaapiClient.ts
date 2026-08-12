@@ -68,6 +68,23 @@ interface RawPrice {
   brokerTime?: string;
 }
 
+export interface RawPosition {
+  id: string;
+  symbol: string;
+  type: string;
+  volume: number;
+  openPrice: number;
+  currentPrice: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  profit: number;
+  swap?: number;
+  commission?: number;
+  comment?: string;
+  magic?: number;
+  time: string;
+}
+
 interface RawCandle {
   time: string;
   open: number;
@@ -97,11 +114,17 @@ export class MetaApiClient {
     this.base = clientUrl(credentials.region, credentials.accountId);
   }
 
-  private async request<T>(path: string): Promise<T> {
+  private async request<T>(path: string, init?: RequestInit): Promise<T> {
     let response: Response;
     try {
       response = await fetch(`${this.base}${path}`, {
-        headers: { 'auth-token': this.credentials.token, accept: 'application/json' },
+        ...init,
+        headers: {
+          'auth-token': this.credentials.token,
+          accept: 'application/json',
+          ...(init?.body ? { 'content-type': 'application/json' } : {}),
+          ...(init?.headers ?? {}),
+        },
       });
     } catch (err) {
       // A browser cannot distinguish a CORS refusal from a dead network here.
@@ -183,6 +206,53 @@ export class MetaApiClient {
       ask: Number(price.ask),
       time: Number.isFinite(time) ? time : Date.now(),
     };
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Trading — these place and close real orders on the account         */
+  /* ---------------------------------------------------------------- */
+
+  private trade<T>(body: Record<string, unknown>): Promise<T> {
+    return this.request<T>('/trade', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async openPositions(): Promise<RawPosition[]> {
+    const list = await this.request<RawPosition[]>('/positions');
+    return Array.isArray(list) ? list : [];
+  }
+
+  /** Sends a market order. Resolves with the broker's position id. */
+  async marketOrder(input: {
+    side: 'buy' | 'sell';
+    volume: number;
+    stopLoss?: number | null;
+    takeProfit?: number | null;
+    comment?: string;
+    magic?: number;
+  }): Promise<{ positionId?: string; orderId?: string; message?: string; stringCode?: string }> {
+    return this.trade({
+      actionType: input.side === 'buy' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL',
+      symbol: this.credentials.symbol,
+      volume: input.volume,
+      stopLoss: input.stopLoss ?? undefined,
+      takeProfit: input.takeProfit ?? undefined,
+      // MetaTrader truncates comments; keep within what it accepts.
+      comment: input.comment?.slice(0, 26),
+      magic: input.magic ?? 20260811,
+    });
+  }
+
+  async closePositionById(positionId: string): Promise<{ stringCode?: string; message?: string }> {
+    return this.trade({ actionType: 'POSITION_CLOSE_ID', positionId });
+  }
+
+  async modifyPosition(positionId: string, stopLoss: number | null, takeProfit: number | null): Promise<unknown> {
+    return this.trade({
+      actionType: 'POSITION_MODIFY',
+      positionId,
+      stopLoss: stopLoss ?? undefined,
+      takeProfit: takeProfit ?? undefined,
+    });
   }
 
   /** Recent M1 bars, oldest first, for the chart and the indicators. */

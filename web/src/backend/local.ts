@@ -35,6 +35,7 @@ import {
   saveCredentials,
   type BrokerCredentials,
 } from '../broker/metaapiClient';
+import { MetaApiBrowserAccount } from '../broker/metaapiAccount';
 import { LOCKED, type ConnectInput, type SessionState } from './session';
 import type {
   BotView,
@@ -202,9 +203,17 @@ export function createLocalBackend(): TerminalBackend {
         rt.bot.prime(history);
       }
 
+      if (input.liveExecution) {
+        // Orders, closes and the position book come from the broker itself.
+        rt.accounts.registerProvider(
+          'metaapi',
+          (cfg) => new MetaApiBrowserAccount(cfg, api, (message) => rt.journal.write('error', null, message)),
+        );
+      }
+
       addAccount(rt, {
         name: `${info.broker} ${info.login}`.trim(),
-        provider: 'metaapi',
+        provider: input.liveExecution ? 'metaapi' : 'sim',
         login: info.login,
         server: info.server,
         broker: info.broker,
@@ -244,12 +253,18 @@ export function createLocalBackend(): TerminalBackend {
       if (input.remember) saveCredentials(credentials);
       else clearCredentials();
 
+      rt.journal.write(
+        input.liveExecution ? 'warn' : 'info',
+        null,
+        input.liveExecution
+          ? 'Live execution armed — orders will be sent to your broker'
+          : 'Paper execution — fills are simulated against your broker\'s prices',
+      );
+
       setSession({
         status: 'live',
         broker: { login: info.login, server: info.server, broker: info.broker, currency: info.currency },
-        // Order routing is not implemented in the browser build; fills are
-        // simulated against the broker's real prices.
-        execution: 'local',
+        execution: input.liveExecution ? 'broker' : 'local',
       });
     } catch (err) {
       teardown();

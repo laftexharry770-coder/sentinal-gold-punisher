@@ -158,12 +158,21 @@ function SessionBadge({ session }: { session: SessionState }) {
   if (session.status !== 'live' && session.status !== 'demo') return null;
 
   const demo = session.status === 'demo';
+  const live = session.status === 'live' && session.execution === 'broker';
   const label = demo ? 'Demo data' : `${session.broker.broker} · live`;
   const tone = demo ? 'border-warn/40 bg-warn/10 text-warn' : 'border-profit/40 bg-profit/10 text-profit';
 
   return (
     <div className="hidden items-center gap-2 md:flex">
       <span className={`chip ${tone}`}>{label}</span>
+      {session.status === 'live' && (
+        <span
+          className={`chip ${live ? 'border-loss/50 bg-loss/15 text-loss' : 'border-[var(--color-line)] bg-[var(--color-surface-2)] text-[var(--color-ink-dim)]'}`}
+          title={live ? 'Orders are sent to your broker' : 'Orders fill locally against broker prices'}
+        >
+          {live ? 'Live orders' : 'Paper orders'}
+        </span>
+      )}
       <button
         className="btn btn-ghost px-2.5 py-1.5 text-xs"
         disabled={busy}
@@ -263,10 +272,11 @@ export function Shell({
             <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-profit live-dot' : 'bg-loss'}`} />
             {connected ? (session.status === 'demo' ? 'Simulated feed' : 'Broker feed live') : 'Reconnecting…'}
           </div>
-          {session.status === 'live' && session.execution === 'local' && (
+          {session.status === 'live' && (
             <p className="px-1 text-[0.625rem] leading-snug text-[var(--color-ink-muted)]">
-              Prices and balance are your broker's. Orders fill locally against them — they are not sent
-              to MetaTrader.
+              {session.execution === 'broker'
+                ? "Orders are sent to your broker. Positions shown are the ones on your account."
+                : "Prices and balance are your broker's. Orders fill locally against them — nothing reaches MetaTrader."}
             </p>
           )}
         </div>

@@ -20,4 +20,9 @@ export const LOCKED: SessionState = { status: 'locked', error: null };
 
 export interface ConnectInput extends BrokerCredentials {
   remember: boolean;
+  /**
+   * Opt-in: when true the engine sends real orders to the broker. Off by
+   * default so connecting to watch prices can never place a trade.
+   */
+  liveExecution: boolean;
 }

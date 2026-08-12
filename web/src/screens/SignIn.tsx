@@ -15,6 +15,8 @@ export function SignIn({ session }: { session: SessionState }) {
   const [region, setRegion] = useState<MetaApiRegion>(saved?.region ?? 'new-york');
   const [symbol, setSymbol] = useState(saved?.symbol ?? 'XAUUSD');
   const [remember, setRemember] = useState(Boolean(saved));
+  // Live routing is never on unless the operator turns it on, every session.
+  const [liveExecution, setLiveExecution] = useState(false);
   const [busy, setBusy] = useState<'connect' | 'demo' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,7 +29,7 @@ export function SignIn({ session }: { session: SessionState }) {
     setBusy('connect');
     setError(null);
     try {
-      await api.connectBroker({ token, accountId, region, symbol, remember });
+      await api.connectBroker({ token, accountId, region, symbol, remember, liveExecution });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not connect.');
     } finally {
@@ -111,7 +113,23 @@ export function SignIn({ session }: { session: SessionState }) {
             checked={remember}
             onChange={setRemember}
           />
+          <Toggle
+            label="Send orders to my broker"
+            hint="Off: fills are simulated against your broker's real prices. On: the bot places real trades on this account."
+            checked={liveExecution}
+            onChange={setLiveExecution}
+          />
         </div>
+
+        {liveExecution && (
+          <p className="mt-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs leading-relaxed text-warn">
+            Live trading is armed. Once the bot is running it will open and close real positions on
+            {' '}
+            {accountId.trim() ? `account ${accountId.trim()}` : 'this account'} — up to its
+            concurrent-position cap. Try it on a demo account first, and check the caps on Trade
+            Settings before arming the bot.
+          </p>
+        )}
 
         {shown && (
           <p className="mt-3 rounded-lg border border-loss/40 bg-loss/10 px-3 py-2 text-xs leading-relaxed text-loss">
@@ -146,8 +164,8 @@ export function SignIn({ session }: { session: SessionState }) {
       </section>
 
       <p className="px-1 text-center text-[0.6875rem] leading-relaxed text-[var(--color-ink-muted)]">
-        Live prices, balance and equity come from your broker. Order routing needs the server build —
-        in this browser build, fills are simulated against the real prices.
+        Prices, history, balance and equity always come from your broker. Whether orders reach it is
+        the switch above.
       </p>
     </div>
   );
