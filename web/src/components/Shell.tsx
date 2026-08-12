@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { formatMoney, formatPrice } from '@sentinal/shared';
 import { api } from '../api';
+import { onInstallAvailability, promptInstall } from '../pwa';
 import { useTerminal } from '../store';
 
 export type ScreenId = 'dashboard' | 'bot' | 'settings' | 'brokers';
@@ -124,6 +125,32 @@ function QuoteStrip() {
   );
 }
 
+function InstallButton() {
+  const [available, setAvailable] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => onInstallAvailability(setAvailable), []);
+  if (!available) return null;
+
+  return (
+    <button
+      className="btn btn-ghost hidden px-2.5 py-2 text-xs sm:inline-flex"
+      disabled={busy}
+      title="Install Sentinal MT5 as an app"
+      onClick={() => {
+        setBusy(true);
+        void promptInstall().finally(() => setBusy(false));
+      }}
+    >
+      <svg viewBox="0 0 20 20" fill="none" style={{ height: 15, width: 15 }} aria-hidden="true">
+        <path d="M10 3.5v8.4m0 0 3-3m-3 3-3-3M4 14.5v1a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5v-1"
+          stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      Install
+    </button>
+  );
+}
+
 function BotSwitch() {
   const { config, stats, accounts } = useTerminal();
   const [busy, setBusy] = useState(false);
@@ -229,6 +256,7 @@ export function Shell({
             <div className="hidden sm:block">
               <QuoteStrip />
             </div>
+            <InstallButton />
             <BotSwitch />
           </div>
         </header>

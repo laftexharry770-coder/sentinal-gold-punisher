@@ -16,8 +16,17 @@ Node and in a browser tab. That is what makes the two builds below possible.
 
 ## Two ways to run it
 
-**Standalone (no server).** One self-contained HTML file with the engine running
-in the page — open it and it trades:
+**Standalone (no server) — an installable web app.** The engine runs in the page,
+so the build is a static site you can open, install and use offline:
+
+- installable from the browser (an **Install** button appears in the header when
+  the browser offers it), running in its own window with the app icon;
+- works with **no network at all** — a service worker caches the shell, and the
+  engine, feed and book are local anyway;
+- screens are addressable (`?screen=bot`), so the back button and the app
+  shortcuts on the icon both work.
+
+Build it with:
 
 ```bash
 npm install
@@ -25,10 +34,10 @@ npm run build --workspace shared && npm run build --workspace engine
 npm run build:standalone --workspace web    # -> web/dist-standalone/index.html
 ```
 
-Push it to any static host. The committed GitHub Pages workflow does exactly
-this on every push; enable it once under **Settings → Pages → Source: GitHub
-Actions** and the terminal is served from your repository. Everything except
-MetaApi routing works, since live orders need a server-held token.
+Push the folder to any static host. The committed workflow does this on every
+push: it runs the tests, builds the page and force-pushes it to the `gh-pages`
+branch, which GitHub Pages serves. Everything except MetaApi routing works,
+since live orders need a server-held token.
 
 **Client/server.** The Node execution server owns the book and streams it to any
 number of connected terminals — use this when the engine must keep running while

@@ -82,7 +82,21 @@ async function main() {
   const title = html.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? 'Sentinal MT5';
   const head = html.slice(html.indexOf('<head>') + 6, html.indexOf('</head>'));
   const body = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>'));
-  const artifact = `<title>${title}</title>\n${head.replace(/<title>[\s\S]*?<\/title>/, '').replace(/<meta charset[^>]*>/, '').trim()}\n${body.trim()}\n`;
+  // The artifact is a lone file: manifest, icons and the worker are not served
+  // alongside it, so their tags are dropped rather than left to 404. The app
+  // treats a missing manifest link as "no service worker here".
+  const artifactHead = head
+    .replace(/<title>[\s\S]*?<\/title>/, '')
+    .replace(/<meta charset[^>]*>/, '')
+    .replace(/<link[^>]*rel="(?:manifest|icon|apple-touch-icon)"[^>]*>/g, '')
+    .trim();
+  const artifact = `<title>${title}</title>\n${artifactHead}\n${body.trim()}\n`;
+
+  // Markup only — the inlined bundle mentions rel="manifest" in its own code.
+  const artifactMarkup = artifact.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
+  if (/rel="(?:manifest|icon|apple-touch-icon)"/.test(artifactMarkup)) {
+    throw new Error('artifact still references files it does not ship');
+  }
 
   await mkdir(path.join(repoRoot, 'web/dist-artifact'), { recursive: true });
   await writeFile(path.join(repoRoot, 'web/dist-artifact/sentinal-mt5.html'), artifact);
