@@ -1,8 +1,10 @@
-name: Publish terminal to gh-pages
+name: Publish terminal
 
-# The standalone build runs the whole engine in the browser, so the site is a
-# single static page. This publishes it to the gh-pages branch, which GitHub
-# Pages serves with "Deploy from a branch".
+# The standalone build runs the whole engine in the browser, so the site is
+# static. It is published to two places so that either GitHub Pages source
+# works without changing repository settings:
+#   - the repository root of this branch ("Deploy from a branch: / (root)")
+#   - the gh-pages branch ("Deploy from a branch: gh-pages")
 on:
   push:
     # The development branch has been known by both names; publishing follows
@@ -11,13 +13,20 @@ on:
       - main
       - claude/sentinal-gold-punisher
       - claude/sentinal-mt5-handoff-602958
+    # Without this the workflow's own publish commit would trigger it again.
+    paths-ignore:
+      - 'index.html'
+      - '404.html'
+      - 'sw.js'
+      - 'manifest.webmanifest'
+      - 'icons/**'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: gh-pages
+  group: publish-terminal
   cancel-in-progress: false
 
 jobs:
@@ -42,13 +51,33 @@ jobs:
           npm run build --workspace engine
           npm run build:standalone --workspace web
 
-      - name: Push the built page to gh-pages
+      - name: Publish to the repository root
+        run: |
+          set -euo pipefail
+          cp web/dist-standalone/index.html index.html
+          cp web/dist-standalone/404.html 404.html
+          cp web/dist-standalone/manifest.webmanifest manifest.webmanifest
+          cp web/dist-standalone/sw.js sw.js
+          mkdir -p icons && cp web/dist-standalone/icons/*.png icons/
+          touch .nojekyll
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html 404.html manifest.webmanifest sw.js icons .nojekyll
+          if git diff --cached --quiet; then
+            echo "published site already current"
+          else
+            git commit -m "Publish terminal build from ${GITHUB_SHA}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
+      - name: Publish to the gh-pages branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           # .nojekyll stops Pages running the site through Jekyll, which would
-          # ignore files it does not recognise and slow every deploy down.
+          # otherwise render README.md instead of serving the app.
           touch web/dist-standalone/.nojekyll
 
           cd web/dist-standalone
