@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { formatMoney } from '@sentinal/shared';
 
 export function Card({
@@ -155,11 +155,15 @@ export function NumberField({
   hint?: string;
   disabled?: boolean;
 }) {
+  const id = useId();
   return (
     <div>
-      <label className="label">{label}</label>
+      <label className="label" htmlFor={id}>
+        {label}
+      </label>
       <div className="relative">
         <input
+          id={id}
           type="number"
           className="field tabular pr-12"
           value={value ?? ''}
@@ -195,10 +199,14 @@ export function TextField({
   hint?: string;
   type?: string;
 }) {
+  const id = useId();
   return (
     <div>
-      <label className="label">{label}</label>
+      <label className="label" htmlFor={id}>
+        {label}
+      </label>
       <input
+        id={id}
         type={type}
         className="field"
         value={value}

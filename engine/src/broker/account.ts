@@ -274,6 +274,13 @@ export class TradingAccount extends Emitter {
     }
   }
 
+  /** Adopts the balance the broker reports, so displayed figures stay true. */
+  syncBalance(balance: number): void {
+    if (!Number.isFinite(balance)) return;
+    this.balance = round(balance);
+    this.emit('changed', this);
+  }
+
   floatingProfit(): number {
     let total = 0;
     for (const position of this.positions.values()) total += position.profit;

@@ -31,6 +31,16 @@ export interface BrokerCredentials {
   symbol: string;
 }
 
+export interface BrokerSymbolSpec {
+  symbol: string;
+  digits: number;
+  tickSize: number;
+  contractSize: number;
+  minLot: number;
+  maxLot: number;
+  lotStep: number;
+}
+
 export interface BrokerAccountInfo {
   login: string;
   server: string;
@@ -129,6 +139,40 @@ export class MetaApiClient {
     };
   }
 
+  /** Every symbol this account can trade, as the broker names them. */
+  async symbols(): Promise<string[]> {
+    const list = await this.request<string[]>('/symbols');
+    return Array.isArray(list) ? list : [];
+  }
+
+  /**
+   * The broker's own contract specification. Gold is 100 oz per lot at most
+   * brokers but not all, and the lot grid and digits vary, so the engine uses
+   * these numbers rather than assuming.
+   */
+  async specification(symbol = this.credentials.symbol): Promise<BrokerSymbolSpec> {
+    const raw = await this.request<{
+      symbol?: string;
+      digits?: number;
+      tickSize?: number;
+      contractSize?: number;
+      minVolume?: number;
+      maxVolume?: number;
+      volumeStep?: number;
+    }>(`/symbols/${encodeURIComponent(symbol)}/specification`);
+
+    const digits = Number(raw.digits ?? 2);
+    return {
+      symbol: raw.symbol ?? symbol,
+      digits,
+      tickSize: Number(raw.tickSize) > 0 ? Number(raw.tickSize) : 10 ** -digits,
+      contractSize: Number(raw.contractSize) > 0 ? Number(raw.contractSize) : 100,
+      minLot: Number(raw.minVolume) > 0 ? Number(raw.minVolume) : 0.01,
+      maxLot: Number(raw.maxVolume) > 0 ? Number(raw.maxVolume) : 100,
+      lotStep: Number(raw.volumeStep) > 0 ? Number(raw.volumeStep) : 0.01,
+    };
+  }
+
   async currentPrice(): Promise<Tick> {
     const symbol = encodeURIComponent(this.credentials.symbol);
     const price = await this.request<RawPrice>(`/symbols/${symbol}/current-price?keepSubscription=true`);
@@ -159,6 +203,11 @@ export class MetaApiClient {
       .filter((bar) => Number.isFinite(bar.time) && Number.isFinite(bar.close))
       .sort((a, b) => a.time - b.time);
   }
+}
+
+/** Symbols that are plausibly gold, for when the configured name is unknown. */
+export function goldCandidates(symbols: string[]): string[] {
+  return symbols.filter((symbol) => /^(xau|gold)/i.test(symbol)).slice(0, 12);
 }
 
 const STORAGE_KEY = 'sentinal.broker.credentials';

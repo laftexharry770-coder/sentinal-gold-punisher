@@ -25,9 +25,12 @@ import type {
   ServerMessage,
   Tick,
 } from '@sentinal/shared';
+import { registerSymbolSpec, XAUUSD } from '@sentinal/shared';
 import {
+  BrokerError,
   MetaApiClient,
   clearCredentials,
+  goldCandidates,
   loadCredentials,
   saveCredentials,
   type BrokerCredentials,
@@ -147,13 +150,45 @@ export function createLocalBackend(): TerminalBackend {
       // Validating first means a bad token never leaves a half-built terminal.
       const info = await api.accountInfo();
 
+      // Brokers name gold differently and quote it on their own contract terms,
+      // so take the specification from this account rather than assuming one.
+      const spec = await api.specification().catch(async (err: unknown) => {
+        if (err instanceof BrokerError && err.status === 404) {
+          const candidates = goldCandidates(await api.symbols().catch(() => []));
+          throw new BrokerError(
+            candidates.length > 0
+              ? `${credentials.symbol} is not tradable on this account. This broker offers: ${candidates.join(', ')}.`
+              : `${credentials.symbol} is not tradable on this account. Check the symbol name in your terminal.`,
+            404,
+          );
+        }
+        throw err;
+      });
+
+      registerSymbolSpec({
+        symbol: spec.symbol,
+        digits: spec.digits,
+        tickSize: spec.tickSize,
+        contractSize: spec.contractSize,
+        minLot: spec.minLot,
+        maxLot: spec.maxLot,
+        lotStep: spec.lotStep,
+        // Spread comes from the live quote; commission is not exposed per
+        // symbol by MetaApi, so the built-in estimate stands until overridden.
+        baseSpread: XAUUSD.baseSpread,
+        commissionPerLot: XAUUSD.commissionPerLot,
+      });
+      credentials.symbol = spec.symbol;
+
       const rt = createRuntime({
         seedPrice: 0,
         tickIntervalMs: QUOTE_POLL_MS,
         seed: null,
         historyBars: 240,
         source: 'external',
-        banner: `Connected to ${info.broker} · ${info.server} — live ${credentials.symbol} feed`,
+        banner:
+          `Connected to ${info.broker} · ${info.server} — live ${credentials.symbol} feed ` +
+          `(${spec.contractSize} per lot, ${spec.digits} digits, ${spec.minLot} min lot)`,
       });
       attach(rt);
       runtime = rt;
@@ -196,11 +231,10 @@ export function createLocalBackend(): TerminalBackend {
         void api
           .accountInfo()
           .then((fresh) => {
-            rt.journal.write(
-              'info',
-              null,
-              `Broker balance ${fresh.currency} ${fresh.balance.toFixed(2)} · equity ${fresh.equity.toFixed(2)}`,
-            );
+            // Display the broker's own balance rather than a drifting local copy.
+            for (const account of rt.accounts.list()) account.syncBalance(fresh.balance);
+            emit({ type: 'accounts', payload: rt.accounts.states() });
+            emit({ type: 'portfolio', payload: rt.accounts.portfolio() });
           })
           .catch(() => {
             /* transient; the quote poll surfaces persistent failures */

@@ -15,6 +15,18 @@ export const XAUUSD: SymbolSpec = {
 
 export const SYMBOLS: Record<string, SymbolSpec> = { XAUUSD };
 
+/**
+ * Registers the contract specification a broker reports for a symbol.
+ *
+ * Brokers differ on contract size, digits and the lot grid, and they name gold
+ * differently (XAUUSD, GOLD, XAUUSD.m …). Registering the real specification
+ * keeps profit, stop distances and margin correct instead of assuming the
+ * built-in defaults.
+ */
+export function registerSymbolSpec(spec: SymbolSpec): void {
+  SYMBOLS[spec.symbol] = spec;
+}
+
 export function getSymbolSpec(symbol: string): SymbolSpec {
   return SYMBOLS[symbol] ?? XAUUSD;
 }
