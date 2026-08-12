@@ -1,4 +1,5 @@
 import type { AccountState, BotConfig, ClosedTrade, CopySettings, Position, ServerMessage } from '@sentinal/shared';
+import type { SessionState } from './session';
 import type {
   BotView,
   NewAccountPayload,
@@ -28,7 +29,27 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 /** Talks to the Node execution server over REST plus a WebSocket stream. */
 export function createRemoteBackend(): TerminalBackend {
+  // The execution server owns the broker session and its accounts, so this
+  // build is never gated behind a sign-in screen.
+  const serverSession: SessionState = {
+    status: 'live',
+    broker: { login: '', server: 'execution server', broker: 'Sentinal', currency: 'USD' },
+    execution: 'broker',
+  };
+
   return {
+    sessionState: () => serverSession,
+    onSession(listener) {
+      listener(serverSession);
+      return () => {};
+    },
+    connectBroker: async () => {
+      throw new Error('Link accounts from the Connect Broker screen on the server build.');
+    },
+    startDemo: async () => {},
+    signOut: async () => {},
+    savedCredentials: () => null,
+
     subscribe({ onMessage, onStatus }: Subscription) {
       let socket: WebSocket | null = null;
       let timer: number | undefined;

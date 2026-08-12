@@ -19,6 +19,8 @@ export interface RuntimeOptions {
   seed: number | null;
   historyBars: number;
   equitySampleMs?: number;
+  /** 'external' waits for a broker to push quotes instead of simulating them. */
+  source?: 'simulated' | 'external';
   /** Message written to the journal once the runtime is composed. */
   banner?: string;
 }
@@ -52,13 +54,15 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     intervalMs: options.tickIntervalMs,
     seed: options.seed,
     historyBars,
+    source: options.source,
   });
   const bot = new BotEngine(accounts, journal);
   const copier = new CopyTradeEngine(accounts, journal);
 
-  // Load the seeded history into the indicators so arming the bot acts on the
-  // next tick rather than after a warm-up delay.
-  bot.prime(feed.candles);
+  // Load history into the indicators so arming the bot acts on the next tick
+  // rather than after a warm-up delay. An external feed has no history yet, so
+  // the caller primes it once the broker's bars arrive.
+  if (!feed.isExternal) bot.prime(feed.candles);
 
   const equityCurve: EquityPoint[] = [];
   let barJustClosed = false;

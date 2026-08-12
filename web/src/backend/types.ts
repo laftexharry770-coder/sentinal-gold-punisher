@@ -7,6 +7,8 @@ import type {
   Position,
   ServerMessage,
 } from '@sentinal/shared';
+import type { BrokerCredentials } from '../broker/metaapiClient';
+import type { ConnectInput, SessionState } from './session';
 
 export interface NewAccountPayload {
   name: string;
@@ -52,6 +54,14 @@ export interface Subscription {
 export interface TerminalBackend {
   /** Starts streaming. Returns an unsubscribe function. */
   subscribe(handlers: Subscription): () => void;
+
+  /* --- session: the terminal shows market data only once this is live --- */
+  sessionState(): SessionState;
+  onSession(listener: (state: SessionState) => void): () => void;
+  connectBroker(input: ConnectInput): Promise<void>;
+  startDemo(): Promise<void>;
+  signOut(): Promise<void>;
+  savedCredentials(): BrokerCredentials | null;
 
   addAccount(payload: NewAccountPayload): Promise<AccountState>;
   updateAccount(

@@ -8,6 +8,12 @@ export interface FeedOptions {
   intervalMs: number;
   seed: number | null;
   historyBars: number;
+  /**
+   * 'simulated' generates its own ticks. 'external' generates nothing and waits
+   * for a broker connection to push quotes in, so the terminal shows no prices
+   * until one exists.
+   */
+  source?: 'simulated' | 'external';
 }
 
 /**
@@ -40,7 +46,12 @@ export class MarketFeed extends Emitter {
     this.rng = createRng(opts.seed);
     this.mid = opts.seedPrice;
     this.spread = opts.spec.baseSpread;
-    this.seedHistory(opts.historyBars);
+    // An external feed starts empty: its history and quotes come from the broker.
+    if (opts.source !== 'external') this.seedHistory(opts.historyBars);
+  }
+
+  get isExternal(): boolean {
+    return this.opts.source === 'external';
   }
 
   get quote(): Tick | null {
@@ -79,9 +90,25 @@ export class MarketFeed extends Emitter {
   }
 
   start(): void {
-    if (this.timer) return;
+    if (this.timer || this.isExternal) return;
     this.emitTick();
     this.timer = setInterval(() => this.emitTick(), this.opts.intervalMs);
+  }
+
+  /** Loads broker history so the chart opens with real bars behind it. */
+  seedCandles(candles: Candle[]): void {
+    this.candlesM1 = candles.slice(-1500);
+    this.current = null;
+  }
+
+  /**
+   * Publishes a quote received from a broker. Candle aggregation, valuation and
+   * every downstream listener behave exactly as they do for simulated ticks.
+   */
+  pushTick(tick: Tick): void {
+    this.lastTick = tick;
+    this.applyToCandle(tick, tick.time);
+    this.emit('tick', tick);
   }
 
   stop(): void {

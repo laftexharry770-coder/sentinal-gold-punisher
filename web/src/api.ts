@@ -25,6 +25,12 @@ export function setBackend(next: TerminalBackend): void {
 
 export const api: TerminalBackend = {
   subscribe: (handlers) => backend.subscribe(handlers),
+  sessionState: () => backend.sessionState(),
+  onSession: (listener) => backend.onSession(listener),
+  connectBroker: (input) => backend.connectBroker(input),
+  startDemo: () => backend.startDemo(),
+  signOut: () => backend.signOut(),
+  savedCredentials: () => backend.savedCredentials(),
   addAccount: (payload) => backend.addAccount(payload),
   updateAccount: (id, patch) => backend.updateAccount(id, patch),
   removeAccount: (id) => backend.removeAccount(id),

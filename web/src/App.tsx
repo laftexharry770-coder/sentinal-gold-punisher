@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
+import { api } from './api';
+import type { SessionState } from './backend/session';
 import { Shell, SCREENS, type ScreenId } from './components/Shell';
 import { BotControlCenter } from './screens/BotControlCenter';
 import { ConnectBroker } from './screens/ConnectBroker';
 import { Dashboard } from './screens/Dashboard';
+import { SignIn } from './screens/SignIn';
 import { TradeSettings } from './screens/TradeSettings';
 
 const SCREEN_IDS = SCREENS.map((screen) => screen.id);
@@ -19,6 +22,9 @@ function screenFromLocation(): ScreenId {
 
 export function App() {
   const [screen, setScreen] = useState<ScreenId>(screenFromLocation);
+  const [session, setSession] = useState<SessionState>(() => api.sessionState());
+
+  useEffect(() => api.onSession(setSession), []);
 
   const navigate = useCallback((next: ScreenId) => {
     setScreen(next);
@@ -34,8 +40,13 @@ export function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  // No market data, no chart, no accounts until a session exists.
+  if (session.status === 'locked' || session.status === 'connecting') {
+    return <SignIn session={session} />;
+  }
+
   return (
-    <Shell screen={screen} onNavigate={navigate}>
+    <Shell screen={screen} onNavigate={navigate} session={session}>
       {screen === 'dashboard' && <Dashboard />}
       {screen === 'bot' && <BotControlCenter />}
       {screen === 'settings' && <TradeSettings />}

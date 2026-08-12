@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { formatMoney, formatPrice } from '@sentinal/shared';
 import { api } from '../api';
+import type { SessionState } from '../backend/session';
 import { onInstallAvailability, promptInstall } from '../pwa';
 import { useTerminal } from '../store';
 
@@ -151,6 +152,32 @@ function InstallButton() {
   );
 }
 
+/** Names the data source, so simulated figures are never mistaken for live ones. */
+function SessionBadge({ session }: { session: SessionState }) {
+  const [busy, setBusy] = useState(false);
+  if (session.status !== 'live' && session.status !== 'demo') return null;
+
+  const demo = session.status === 'demo';
+  const label = demo ? 'Demo data' : `${session.broker.broker} · live`;
+  const tone = demo ? 'border-warn/40 bg-warn/10 text-warn' : 'border-profit/40 bg-profit/10 text-profit';
+
+  return (
+    <div className="hidden items-center gap-2 md:flex">
+      <span className={`chip ${tone}`}>{label}</span>
+      <button
+        className="btn btn-ghost px-2.5 py-1.5 text-xs"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          void api.signOut().finally(() => setBusy(false));
+        }}
+      >
+        {demo ? 'Exit demo' : 'Sign out'}
+      </button>
+    </div>
+  );
+}
+
 function BotSwitch() {
   const { config, stats, accounts } = useTerminal();
   const [busy, setBusy] = useState(false);
@@ -187,10 +214,12 @@ function BotSwitch() {
 export function Shell({
   screen,
   onNavigate,
+  session,
   children,
 }: {
   screen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
+  session: SessionState;
   children: ReactNode;
 }) {
   const { connected, portfolio, stats } = useTerminal();
@@ -232,8 +261,14 @@ export function Shell({
           </div>
           <div className="flex items-center gap-2 px-1 text-[0.6875rem] text-[var(--color-ink-muted)]">
             <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-profit live-dot' : 'bg-loss'}`} />
-            {connected ? 'Feed connected' : 'Reconnecting…'}
+            {connected ? (session.status === 'demo' ? 'Simulated feed' : 'Broker feed live') : 'Reconnecting…'}
           </div>
+          {session.status === 'live' && session.execution === 'local' && (
+            <p className="px-1 text-[0.625rem] leading-snug text-[var(--color-ink-muted)]">
+              Prices and balance are your broker's. Orders fill locally against them — they are not sent
+              to MetaTrader.
+            </p>
+          )}
         </div>
       </aside>
 
@@ -256,6 +291,7 @@ export function Shell({
             <div className="hidden sm:block">
               <QuoteStrip />
             </div>
+            <SessionBadge session={session} />
             <InstallButton />
             <BotSwitch />
           </div>
