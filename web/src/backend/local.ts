@@ -136,6 +136,7 @@ export function createLocalBackend(): TerminalBackend {
     const credentials: DerivCredentials = {
       token: input.token.trim(),
       appId: input.appId.trim(),
+      accountId: input.accountId.trim(),
       symbol: input.symbol.trim() || DEFAULT_SYMBOL,
       multiplier: input.multiplier,
     };

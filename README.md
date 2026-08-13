@@ -181,6 +181,13 @@ the same pass.
   provider by the browser build). It needs nothing but an API token with the Read and
   Trade scopes, entered on the sign-in screen and held in that browser only.
 
+  Signing in follows Deriv's current scheme: the access token is presented as a bearer
+  credential to `POST /trading/v1/options/accounts/{accountId}/otp`, with the app id in a
+  `Deriv-App-ID` header, and Deriv answers with a WebSocket URL that is already
+  authenticated. No `authorize` message is sent over that socket — the URL carries the
+  identity. Leaving the account id blank falls back to the older flow, which puts the app
+  id in the query string and signs in over the socket instead.
+
   Deriv does not expose MetaTrader order entry over its API, so an API token trades
   Deriv's own **multiplier contracts**: you commit a stake, Deriv multiplies the
   exposure, and the stop loss and take profit are money amounts rather than price

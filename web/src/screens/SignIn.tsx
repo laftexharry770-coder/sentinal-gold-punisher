@@ -15,6 +15,7 @@ export function SignIn({ session }: { session: SessionState }) {
   const saved = api.savedCredentials();
   const [token, setToken] = useState(saved?.token ?? '');
   const [appId, setAppId] = useState(saved?.appId ?? DEFAULT_APP_ID);
+  const [accountId, setAccountId] = useState(saved?.accountId ?? '');
   const [symbol, setSymbol] = useState(saved?.symbol ?? DEFAULT_SYMBOL);
   const [multiplier, setMultiplier] = useState(saved?.multiplier ?? 100);
   const [remember, setRemember] = useState(Boolean(saved));
@@ -59,7 +60,7 @@ export function SignIn({ session }: { session: SessionState }) {
     setBusy('connect');
     setError(null);
     try {
-      await api.connectBroker({ token, appId, symbol, multiplier, remember, liveExecution });
+      await api.connectBroker({ token, appId, accountId, symbol, multiplier, remember, liveExecution });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not connect.');
     } finally {
@@ -103,10 +104,9 @@ export function SignIn({ session }: { session: SessionState }) {
       <section className="card p-5">
         <h2 className="text-sm font-semibold text-ink">Connect Deriv</h2>
         <p className="mt-1 text-xs leading-relaxed text-[var(--color-ink-muted)]">
-          The terminal stays empty until it can read your account. Create a token under{' '}
-          <span className="text-ink">Settings → API token</span> on Deriv with the{' '}
-          <span className="text-ink">Read</span> scope, plus <span className="text-ink">Trade</span> if you
-          want the bot to place orders.
+          The terminal stays empty until it can read your account. Take the access token and the app id from
+          your application on <span className="text-ink">developers.deriv.com</span>, and the account id from
+          the Deriv account you want to trade.
         </p>
 
         <div className="mt-4 space-y-3">
@@ -120,6 +120,13 @@ export function SignIn({ session }: { session: SessionState }) {
             placeholder="a1b2c3d4e5f6g7h8"
             error={tokenWarning}
             hint="Stays in this browser. Sent only to Deriv, never anywhere else."
+          />
+          <TextField
+            label="Account id"
+            value={accountId}
+            onChange={setAccountId}
+            placeholder="CR1234567"
+            hint="The Deriv account to trade — CR… for real, VRTC… for demo. This is what tells Deriv which account the token is opening."
           />
           <TextField
             label="Symbol"

@@ -26,6 +26,9 @@ export const DEFAULT_APP_ID = '1089';
  */
 export const DERIV_HOSTS = ['ws.derivws.com', 'ws.binaryws.com', 'blue.derivws.com', 'green.derivws.com'];
 
+/** Where a token is exchanged for an authenticated socket. */
+export const DERIV_REST_BASE = 'https://api.derivws.com';
+
 /**
  * An app id travels in the connection URL, so a malformed one makes Deriv
  * refuse the handshake — which reads exactly like a blocked network.
@@ -51,6 +54,13 @@ export const CONTRACT_SIZE = 100;
 export interface DerivCredentials {
   token: string;
   appId: string;
+  /**
+   * The Deriv account the session runs on, e.g. CR1234567 or VRTC1234567.
+   * Set, it selects Deriv's current scheme, where the token is exchanged over
+   * REST for a socket that is already signed in. Empty, the older flow signs
+   * in over the socket instead.
+   */
+  accountId: string;
   symbol: string;
   /** Deriv's exposure multiplier for new contracts. */
   multiplier: number;
@@ -224,8 +234,14 @@ export class DerivClient {
    * happened rather than "could not connect".
    */
   private dial(host: string, appId: string): Promise<WebSocket> {
-    const url = `wss://${host}/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN&brand=deriv`;
+    return this.dialUrl(
+      `wss://${host}/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN&brand=deriv`,
+      host,
+    );
+  }
 
+  /** Dials a URL Deriv has given us, reporting failures the same way. */
+  private dialUrl(url: string, host: string): Promise<WebSocket> {
     return new Promise<WebSocket>((resolve, reject) => {
       let socket: WebSocket;
       try {
@@ -265,10 +281,111 @@ export class DerivClient {
     });
   }
 
+  /**
+   * Exchanges the access token for a WebSocket URL Deriv has already
+   * authenticated.
+   *
+   * This is Deriv's current scheme: the token is presented as a bearer
+   * credential over REST and the app id travels as a header, rather than the
+   * token being sent in an `authorize` message and the app id in the query
+   * string. A socket opened from the returned URL arrives already signed in.
+   */
+  private async authenticatedUrl(accountId: string, appId: string, token: string): Promise<string> {
+    const endpoint = `${DERIV_REST_BASE}/trading/v1/options/accounts/${encodeURIComponent(accountId)}/otp`;
+
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Deriv-App-ID': appId },
+      });
+    } catch (err) {
+      throw new BrokerError(
+        `Could not reach Deriv to open a session (${err instanceof Error ? err.message : 'network error'}). ` +
+          'Some mobile networks, ISPs and countries block Deriv; check whether deriv.com loads here.',
+        'NetworkError',
+      );
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      throw new BrokerError(
+        `Deriv rejected the credentials (${response.status}). The token must be a personal access token from ` +
+          `developers.deriv.com, and app id ${appId} must be the one it was issued under.`,
+        'InvalidToken',
+      );
+    }
+    if (response.status === 404) {
+      throw new BrokerError(
+        `Deriv does not recognise account ${accountId}. Use the account id shown on your Deriv account — ` +
+          'a real one begins CR, a demo one VRTC.',
+        'UnknownAccount',
+      );
+    }
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new BrokerError(
+        `Deriv refused to open a session (${response.status})${body ? `: ${body.trim().slice(0, 200)}` : '.'}`,
+        'SessionRefused',
+      );
+    }
+
+    const body = (await response.json().catch(() => null)) as { data?: { url?: string } } | null;
+    const url = body?.data?.url;
+    if (!url) throw new BrokerError('Deriv opened a session but returned no socket address for it.', 'SessionRefused');
+    return url;
+  }
+
+  /**
+   * Opens a session on an account id, over a socket Deriv has pre-authorised.
+   *
+   * No `authorize` is sent: the URL already carries the identity, so the
+   * account is read from the balance instead.
+   */
+  private async openAuthenticated(accountId: string, appId: string): Promise<DerivAccountInfo> {
+    const url = await this.authenticatedUrl(accountId, appId, this.credentials.token.trim());
+    const host = (() => {
+      try {
+        return new URL(url).host;
+      } catch {
+        return 'the address Deriv returned';
+      }
+    })();
+
+    const socket = await this.dialUrl(url, host);
+    this.socket = socket;
+    this.appIdUsed = appId;
+    socket.onmessage = (event) => this.receive(event.data);
+    socket.onclose = () => {
+      this.failPending('The Deriv connection dropped.');
+      if (!this.closedByUs) this.onDrop?.('The Deriv connection dropped.');
+    };
+
+    const reply = await this.send({ balance: 1 });
+    const balance = (reply.balance ?? {}) as Record<string, unknown>;
+    const loginId = String(balance.loginid ?? accountId);
+
+    return {
+      loginId,
+      currency: String(balance.currency ?? 'USD'),
+      balance: num(balance.balance),
+      // Deriv prefixes demo logins VRTC/VRW; the pre-authorised socket does not
+      // restate it, so the id is what says which kind of account this is.
+      isVirtual: /^VR/i.test(loginId),
+      landingCompany: 'Deriv',
+      fullName: '',
+    };
+  }
+
   /** Opens the socket and authorises it. Rejects if either step fails. */
   async open(onDrop?: (reason: string) => void): Promise<DerivAccountInfo> {
     this.onDrop = onDrop ?? null;
     const appId = this.credentials.appId.trim() || DEFAULT_APP_ID;
+    const accountId = this.credentials.accountId.trim();
+
+    // An account id means Deriv's current scheme, where the token is exchanged
+    // for an authenticated socket. Without one, fall back to the older flow
+    // that signs in over the socket itself.
+    if (accountId) return this.openAuthenticated(accountId, appId);
 
     // Checked before dialling: characters that cannot survive a URL fail the
     // handshake on every host, which is indistinguishable from a blocked
@@ -715,6 +832,7 @@ export function loadCredentials(): DerivCredentials | null {
     return {
       token: parsed.token,
       appId: parsed.appId ?? DEFAULT_APP_ID,
+      accountId: parsed.accountId ?? '',
       symbol: parsed.symbol ?? DEFAULT_SYMBOL,
       multiplier: Number(parsed.multiplier) > 0 ? Number(parsed.multiplier) : 100,
     };
