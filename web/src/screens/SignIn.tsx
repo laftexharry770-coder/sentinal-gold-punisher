@@ -250,6 +250,27 @@ export function SignIn({ session }: { session: SessionState }) {
         </button>
       </section>
 
+      {/*
+        The digits desk is a separate app now, not a mode of this one. A link
+        is what keeps both reachable without either carrying the other's
+        instrument.
+      */}
+      <section className="card-flush flex items-center justify-between gap-3 p-4">
+        <div className="min-w-0">
+          <h3 className="text-xs font-semibold text-ink">Trading volatility digits instead?</h3>
+          <p className="mt-0.5 text-[0.6875rem] leading-snug text-[var(--color-ink-muted)]">
+            Matches, differs, even/odd and over/under live in Sentinal Deriv Bot.
+          </p>
+        </div>
+        <a
+          className="btn btn-ghost shrink-0 px-3 py-1.5 text-xs"
+          href="https://laftexharry770-coder.github.io/Sentinal-Deriv-Bot/"
+          rel="noreferrer"
+        >
+          Open
+        </a>
+      </section>
+
       <p className="px-1 text-center text-[0.6875rem] leading-relaxed text-[var(--color-ink-muted)]">
         Prices, history, balance and open contracts always come from Deriv. Whether orders reach it is
         the switch above.
