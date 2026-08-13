@@ -60,9 +60,20 @@ npm start            # http://localhost:4000
 ```
 
 ```bash
-npm test             # execution-engine test suite
+npm test             # engine and web test suites
 npm run typecheck    # all workspaces
 ```
+
+Commit the built page along with the source that produced it:
+
+```bash
+npm run publish:local   # builds the standalone page into the repository root
+```
+
+The publish workflow rebuilds and commits those same files when a push leaves
+them stale. Running it here first means the workflow finds nothing to do, which
+matters because it commits onto whichever branch it ran on — two branches
+publishing the same source is how they drift apart.
 
 Copy `.env.example` to `.env` to change the port or the simulated feed.
 
