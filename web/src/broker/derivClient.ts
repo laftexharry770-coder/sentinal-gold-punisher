@@ -146,11 +146,20 @@ function describe(code: string, message: string): string {
 }
 
 /**
+ * Length past which the field is holding more than one token.
+ *
+ * Deriv issues tokens of around 15 characters. The threshold sits well clear
+ * of that so a change to their format cannot make this cry wolf, while still
+ * catching the common case: pasting into a masked field that was never empty,
+ * so attempt after attempt accumulates unseen.
+ */
+const IMPLAUSIBLE_TOKEN_LENGTH = 40;
+
+/**
  * Flags a token that cannot be right before Deriv is asked.
  *
- * Deliberately narrow: only faults that are certain from the text itself, so
- * a change to Deriv's token format cannot make this reject a working token.
- * Length is not checked for that reason.
+ * Narrow on purpose: faults that are evident from the text itself. It warns
+ * rather than blocks, so a token this does not recognise can still be tried.
  */
 export function tokenShapeWarning(token: string): string | null {
   const trimmed = token.trim();
@@ -158,6 +167,12 @@ export function tokenShapeWarning(token: string): string | null {
   if (/\s/.test(trimmed)) return 'This token has a space or line break inside it — copy it again.';
   if (!/^[A-Za-z0-9_-]+$/.test(trimmed)) {
     return 'This token has punctuation in it, so something other than the token was copied.';
+  }
+  if (trimmed.length > IMPLAUSIBLE_TOKEN_LENGTH) {
+    return (
+      `That is ${trimmed.length} characters — far longer than a Deriv token, which is about 15. ` +
+      'Press Clear and paste once, rather than adding to what is already there.'
+    );
   }
   return null;
 }

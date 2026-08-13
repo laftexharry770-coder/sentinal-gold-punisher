@@ -112,6 +112,20 @@ describe('token shape', () => {
     expect(tokenShapeWarning('token: abc')).toMatch(/space or line break/);
     expect(tokenShapeWarning('"abc123"')).toMatch(/punctuation/);
   });
+
+  it('catches a masked field that has been pasted into repeatedly', () => {
+    // The real case: 68 unbroken characters reached Deriv, because a password
+    // field on a phone shows nothing of what it already holds.
+    const piled = 'a1b2c3d4e5f6g7h'.repeat(4) + 'abcdefgh';
+    expect(piled).toHaveLength(68);
+    expect(tokenShapeWarning(piled)).toMatch(/68 characters/);
+    expect(tokenShapeWarning(piled)).toMatch(/Press Clear/);
+  });
+
+  it('leaves a plausible token alone even at an unfamiliar length', () => {
+    expect(tokenShapeWarning('a1b2c3d4e5f6g7h')).toBeNull();
+    expect(tokenShapeWarning('a'.repeat(40))).toBeNull();
+  });
 });
 
 describe('gold symbol discovery', () => {

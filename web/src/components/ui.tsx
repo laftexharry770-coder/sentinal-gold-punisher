@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { formatMoney } from '@sentinal/shared';
 
 export function Card({
@@ -192,6 +192,8 @@ export function TextField({
   hint,
   error,
   inputMode,
+  secret = false,
+  showCount = false,
   type = 'text',
 }: {
   label: string;
@@ -202,31 +204,72 @@ export function TextField({
   /** Shown in place of the hint, and marks the field invalid to assistive tech. */
   error?: string | null;
   inputMode?: 'text' | 'numeric';
+  /** Masks the value, and offers reveal and clear controls for checking it. */
+  secret?: boolean;
+  /** Prints the length beside the note — enough to spot a bad paste, without showing the value. */
+  showCount?: boolean;
   type?: string;
 }) {
   const id = useId();
   const noteId = `${id}-note`;
+  const [revealed, setRevealed] = useState(false);
+  const controls = secret && value.length > 0;
+
   return (
     <div>
       <label className="label" htmlFor={id}>
         {label}
       </label>
-      <input
-        id={id}
-        type={type}
-        inputMode={inputMode}
-        className={`field${error ? ' border-loss/60' : ''}`}
-        value={value}
-        placeholder={placeholder}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error || hint ? noteId : undefined}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      {(error || hint) && (
+      <div className="relative">
+        <input
+          id={id}
+          type={secret && !revealed ? 'password' : type}
+          inputMode={inputMode}
+          autoComplete={secret ? 'off' : undefined}
+          autoCapitalize={secret ? 'none' : undefined}
+          autoCorrect={secret ? 'off' : undefined}
+          spellCheck={secret ? false : undefined}
+          className={`field${error ? ' border-loss/60' : ''}${controls ? ' pr-24' : ''}`}
+          value={value}
+          placeholder={placeholder}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error || hint || showCount ? noteId : undefined}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {/* A masked field on a phone hides its own mistakes; these let the
+            value be checked and emptied without retyping around it. */}
+        {controls && (
+          <div className="absolute inset-y-0 right-1.5 flex items-center gap-1">
+            <button
+              type="button"
+              className="btn btn-ghost px-2 py-1 text-[0.625rem] uppercase tracking-wide"
+              aria-pressed={revealed}
+              onClick={() => setRevealed((prev) => !prev)}
+            >
+              {revealed ? 'Hide' : 'Show'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost px-2 py-1 text-[0.625rem] uppercase tracking-wide"
+              aria-label={`Clear ${label}`}
+              onClick={() => {
+                setRevealed(false);
+                onChange('');
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        )}
+      </div>
+      {(error || hint || (showCount && value.length > 0)) && (
         <p
           id={noteId}
           className={`mt-1 text-[0.6875rem] leading-snug ${error ? 'text-loss' : 'text-[var(--color-ink-muted)]'}`}
         >
+          {showCount && value.length > 0 && (
+            <span className="tabular font-semibold">{value.trim().length} characters. </span>
+          )}
           {error ?? hint}
         </p>
       )}

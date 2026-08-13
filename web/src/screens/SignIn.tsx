@@ -99,7 +99,8 @@ export function SignIn({ session }: { session: SessionState }) {
         <div className="mt-4 space-y-3">
           <TextField
             label="Deriv API token"
-            type="password"
+            secret
+            showCount
             value={token}
             onChange={setToken}
             placeholder="a1b2c3d4e5f6g7h8"
