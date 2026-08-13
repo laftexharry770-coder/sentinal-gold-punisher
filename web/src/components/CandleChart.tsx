@@ -23,11 +23,11 @@ const COLORS = {
   down: '#ff5c7a',
   wickUp: 'rgba(34, 211, 165, 0.8)',
   wickDown: 'rgba(255, 92, 122, 0.8)',
-  price: '#aab1bb',
+  price: '#d3a259',
   buy: '#22d3a5',
   sell: '#ff5c7a',
   crosshair: 'rgba(169, 174, 183, 0.55)',
-  tagInk: '#0b0d10',
+  tagInk: '#140f05',
 };
 
 /** What the pointer is over, in chart terms rather than pixels. */

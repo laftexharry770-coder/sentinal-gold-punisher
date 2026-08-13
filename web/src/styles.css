@@ -2,7 +2,7 @@
 @import './fonts-embedded.css';
 
 /* ------------------------------------------------------------------ */
-/* Graphite Dark — Sentinal MT5 design system                          */
+/* Graphite &amp; Brass — Sentinal MT5 design system                       */
 /* ------------------------------------------------------------------ */
 
 @theme {
@@ -12,16 +12,25 @@
   --font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  --color-base: #0b0d10;
-  --color-surface: #121519;
-  --color-surface-2: #181c22;
-  --color-surface-3: #21262e;
-  --color-line: #272c34;
-  --color-line-soft: #1e232a66;
+  --color-base: #0a0b0d;
+  --color-surface: #141519;
+  --color-surface-2: #1a1c21;
+  --color-surface-3: #23262c;
+  --color-line: #2a2d34;
+  --color-line-soft: #21242a66;
 
-  --color-ink: #e9ebee;
-  --color-ink-dim: #a9aeb7;
-  --color-ink-muted: #71777f;
+  --color-ink: #ecedf0;
+  --color-ink-dim: #abaeb6;
+  --color-ink-muted: #74787f;
+
+  /*
+   * Brass. The instrument is gold, so the terminal's own accent is drawn from
+   * it — warm enough to give the greys a temperature, dim enough that the
+   * signal colours still read louder than the furniture.
+   */
+  --color-brass: #c08b3c;
+  --color-brass-bright: #e0ac57;
+  --color-brass-deep: #7d5921;
 
   /*
    * The accent is graphite rather than a hue. Colour is reserved for meaning
@@ -57,9 +66,11 @@
 
   body {
     background:
-      radial-gradient(1200px 680px at 80% -14%, rgba(154, 162, 173, 0.09), transparent 64%),
-      radial-gradient(820px 560px at 4% 2%, rgba(120, 128, 140, 0.07), transparent 60%),
-      radial-gradient(900px 500px at 50% 112%, rgba(245, 185, 59, 0.045), transparent 66%),
+      radial-gradient(1150px 640px at 84% -12%, rgba(224, 172, 87, 0.085), transparent 62%),
+      radial-gradient(880px 600px at 2% 6%, rgba(132, 148, 170, 0.075), transparent 58%),
+      radial-gradient(1000px 520px at 48% 114%, rgba(192, 139, 60, 0.06), transparent 68%),
+      /* A vignette keeps the eye in the middle of the screen. */
+      radial-gradient(140% 120% at 50% 50%, transparent 52%, rgba(0, 0, 0, 0.55) 100%),
       var(--color-base);
     background-attachment: fixed;
     color: var(--color-ink);
@@ -139,7 +150,7 @@
     border: 1px solid var(--color-line);
     border-radius: var(--radius-card);
     box-shadow:
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.045),
+      inset 0 1px 0 0 rgba(255, 236, 205, 0.06),
       0 1px 2px -1px rgba(0, 0, 0, 0.9),
       0 22px 48px -32px rgba(0, 0, 0, 0.95);
   }
@@ -188,7 +199,7 @@
   .btn:focus-visible,
   .field:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px var(--color-base), 0 0 0 4px rgba(154, 162, 173, 0.7);
+    box-shadow: 0 0 0 2px var(--color-base), 0 0 0 4px rgba(224, 172, 87, 0.75);
   }
   .btn:hover:not(:disabled) {
     background: var(--color-surface-3);
@@ -203,16 +214,16 @@
   }
 
   .btn-primary {
-    background: linear-gradient(180deg, #676f7b, var(--color-accent-deep));
-    border-color: #767e8a;
-    color: #f7f8fa;
+    background: linear-gradient(180deg, var(--color-brass), var(--color-brass-deep));
+    border-color: #cf9a4d;
+    color: #171104;
     box-shadow:
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.16),
-      0 10px 26px -16px rgba(0, 0, 0, 0.95);
+      inset 0 1px 0 0 rgba(255, 236, 205, 0.32),
+      0 10px 28px -16px rgba(192, 139, 60, 0.55);
   }
   .btn-primary:hover:not(:disabled) {
-    background: linear-gradient(180deg, #767e8a, #4a515b);
-    border-color: #8b93a0;
+    background: linear-gradient(180deg, var(--color-brass-bright), #916827);
+    border-color: #e6b769;
   }
 
   .btn-buy {
@@ -251,11 +262,11 @@
     border-color: #343b45;
   }
   .field:focus {
-    border-color: #7c848f;
-    background: #0f1318;
+    border-color: #8a6f42;
+    background: #0f1116;
     box-shadow:
       inset 0 1px 2px 0 rgba(0, 0, 0, 0.5),
-      0 0 0 3px rgba(154, 162, 173, 0.18);
+      0 0 0 3px rgba(192, 139, 60, 0.16);
   }
   .field::placeholder {
     color: #575d66;
@@ -276,9 +287,23 @@
     position: relative;
     border-radius: 12px;
     background:
-      radial-gradient(120% 80% at 50% 0%, rgba(154, 162, 173, 0.05), transparent 70%),
-      #0a0c10;
-    box-shadow: inset 0 0 0 1px rgba(39, 44, 52, 0.9), inset 0 20px 40px -32px rgba(154, 162, 173, 0.35);
+      radial-gradient(130% 90% at 50% 108%, rgba(192, 139, 60, 0.07), transparent 62%),
+      radial-gradient(120% 80% at 50% 0%, rgba(150, 165, 190, 0.05), transparent 70%),
+      #090a0d;
+    box-shadow:
+      inset 0 0 0 1px rgba(42, 45, 52, 0.9),
+      inset 0 22px 44px -34px rgba(224, 172, 87, 0.4);
+  }
+
+  /* The header carries a hairline of brass, like a rule under a masthead. */
+  .brass-rule {
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgba(192, 139, 60, 0.5) 18%,
+      rgba(192, 139, 60, 0.22) 52%,
+      transparent
+    );
   }
 
   /*
