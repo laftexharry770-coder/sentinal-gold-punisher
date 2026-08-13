@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { api } from '../api';
 import { DEFAULT_APP_ID, DEFAULT_SYMBOL, isValidAppId, tokenShapeWarning } from '../broker/derivClient';
 import { TextField, Toggle } from '../components/ui';
@@ -26,6 +26,19 @@ export function SignIn({ session }: { session: SessionState }) {
   const connecting = session.status === 'connecting' || busy === 'connect';
   const sessionError = session.status === 'locked' ? session.error : null;
   const shown = error ?? sessionError;
+  const tokenRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * A rejected token is fixed at the token field, which sits off-screen behind
+   * the error on a phone. This carries the operator there and empties it, so
+   * the next paste lands in a field that is actually clear.
+   */
+  const resetToken = () => {
+    setToken('');
+    setError(null);
+    tokenRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    tokenRef.current?.focus({ preventScroll: true });
+  };
 
   // A malformed app id fails the handshake in a way that reads like a dead
   // network, so it is caught here. Only characters that cannot survive a URL
@@ -101,6 +114,7 @@ export function SignIn({ session }: { session: SessionState }) {
             label="Deriv API token"
             secret
             showCount
+            inputRef={tokenRef}
             value={token}
             onChange={setToken}
             placeholder="a1b2c3d4e5f6g7h8"
@@ -169,9 +183,16 @@ export function SignIn({ session }: { session: SessionState }) {
         )}
 
         {shown && (
-          <p className="mt-3 rounded-lg border border-loss/40 bg-loss/10 px-3 py-2 text-xs leading-relaxed text-loss">
-            {shown}
-          </p>
+          <div className="mt-3 rounded-lg border border-loss/40 bg-loss/10 px-3 py-2 text-xs leading-relaxed text-loss">
+            <p>{shown}</p>
+            {/* The field holding the rejected value is above the fold; this is
+                the shortest path from reading the problem to fixing it. */}
+            {token.trim().length > 0 && (
+              <button className="btn btn-ghost mt-2 w-full py-1.5 text-xs" onClick={resetToken}>
+                Clear the token field ({token.trim().length} characters) and start again
+              </button>
+            )}
+          </div>
         )}
 
         <button

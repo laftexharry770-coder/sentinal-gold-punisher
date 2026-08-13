@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode, type RefObject } from 'react';
 import { formatMoney } from '@sentinal/shared';
 
 export function Card({
@@ -194,6 +194,7 @@ export function TextField({
   inputMode,
   secret = false,
   showCount = false,
+  inputRef,
   type = 'text',
 }: {
   label: string;
@@ -208,6 +209,8 @@ export function TextField({
   secret?: boolean;
   /** Prints the length beside the note — enough to spot a bad paste, without showing the value. */
   showCount?: boolean;
+  /** Lets a caller move focus here, so an error elsewhere can point at the cause. */
+  inputRef?: RefObject<HTMLInputElement | null>;
   type?: string;
 }) {
   const id = useId();
@@ -223,6 +226,7 @@ export function TextField({
       <div className="relative">
         <input
           id={id}
+          ref={inputRef}
           type={secret && !revealed ? 'password' : type}
           inputMode={inputMode}
           autoComplete={secret ? 'off' : undefined}
