@@ -187,6 +187,12 @@ the same pass.
   screen says so. Trading an MT5 account needs a bridge that speaks the MetaTrader
   protocol; live orders from this terminal go to the Deriv account that signed in.
 
+  Account ids name their own kind — `DOT…` is demo, `ROT…` is real, and the older accounts
+  use `VRTC…` and `CR…`. The sign-in screen says which kind it is reading, and the
+  live-trading warning names the account, so arming the bot on real money is never a
+  silent difference from arming it on practice money. An unrecognised prefix is treated
+  as real, which is the safe way to be wrong about that.
+
   Signing in follows Deriv's current scheme: the access token is presented as a bearer
   credential to `POST /trading/v1/options/accounts/{accountId}/otp`, with the app id in a
   `Deriv-App-ID` header, and Deriv answers with a WebSocket URL that is already

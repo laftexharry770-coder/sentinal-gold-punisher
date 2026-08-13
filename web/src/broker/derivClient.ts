@@ -41,6 +41,20 @@ export function isValidAppId(appId: string): boolean {
   return /^[A-Za-z0-9_-]+$/.test(appId.trim());
 }
 
+/**
+ * Whether an account id names a demo account.
+ *
+ * Deriv's trading accounts are prefixed by kind: DOT for demo and ROT for
+ * real on the options-trading API, VRTC and CR on the older accounts. Only
+ * the leading letter is read, so an unfamiliar prefix still lands somewhere
+ * sensible, and anything unrecognised is treated as real — the cautious way
+ * round for a label that sits next to a live-trading switch.
+ */
+export function isDemoAccountId(accountId: string): boolean {
+  const id = accountId.trim().toUpperCase();
+  return id.startsWith('D') || id.startsWith('VR');
+}
+
 /** The symbol Deriv uses for spot gold. */
 export const DEFAULT_SYMBOL = 'frxXAUUSD';
 
@@ -55,7 +69,7 @@ export interface DerivCredentials {
   token: string;
   appId: string;
   /**
-   * The Deriv account the session runs on, e.g. CR1234567 or VRTC1234567.
+   * The Deriv account the session runs on, e.g. DOT93898941 or ROT92291419.
    * Set, it selects Deriv's current scheme, where the token is exchanged over
    * REST for a socket that is already signed in. Empty, the older flow signs
    * in over the socket instead.
@@ -334,8 +348,8 @@ export class DerivClient {
     }
     if (response.status === 404) {
       throw new BrokerError(
-        `Deriv does not recognise account ${accountId}. Use the account id shown on your Deriv account — ` +
-          'a real one begins CR, a demo one VRTC.',
+        `Deriv does not recognise account ${accountId}. Use the id shown against the account itself — ` +
+          'a demo one begins DOT, a real one ROT.',
         'UnknownAccount',
       );
     }
@@ -386,9 +400,9 @@ export class DerivClient {
       loginId,
       currency: String(balance.currency ?? 'USD'),
       balance: num(balance.balance),
-      // Deriv prefixes demo logins VRTC/VRW; the pre-authorised socket does not
-      // restate it, so the id is what says which kind of account this is.
-      isVirtual: /^VR/i.test(loginId),
+      // The pre-authorised socket does not restate which kind of account this
+      // is, so the id says: DOT/VRTC are demo, ROT/CR are real.
+      isVirtual: isDemoAccountId(loginId),
       landingCompany: 'Deriv',
       fullName: '',
     };

@@ -3,6 +3,7 @@ import { grossProfit, type SymbolSpec } from '@sentinal/shared';
 import {
   CONTRACT_SIZE,
   goldCandidates,
+  isDemoAccountId,
   isValidAppId,
   stakeFor,
   tokenShapeWarning,
@@ -94,6 +95,25 @@ describe('app id validation', () => {
     expect(isValidAppId('108.9')).toBe(false);
     expect(isValidAppId('a/b')).toBe(false);
     expect(isValidAppId('')).toBe(false);
+  });
+});
+
+describe('account id kind', () => {
+  it("reads Deriv's own prefixes", () => {
+    // Taken from real accounts: DOT is demo, ROT is real.
+    expect(isDemoAccountId('DOT93898941')).toBe(true);
+    expect(isDemoAccountId('ROT92291419')).toBe(false);
+    // The older accounts use VRTC and CR.
+    expect(isDemoAccountId('VRTC1234567')).toBe(true);
+    expect(isDemoAccountId('CR1234567')).toBe(false);
+    expect(isDemoAccountId(' dot93898941 ')).toBe(true);
+  });
+
+  it('calls an unfamiliar prefix real, which is the safe way to be wrong', () => {
+    // This label sits beside a live-trading switch, so an unknown id must not
+    // read as practice money.
+    expect(isDemoAccountId('XYZ123')).toBe(false);
+    expect(isDemoAccountId('')).toBe(false);
   });
 });
 

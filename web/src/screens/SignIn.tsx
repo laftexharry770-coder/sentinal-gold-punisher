@@ -1,6 +1,12 @@
 import { useRef, useState } from 'react';
 import { api } from '../api';
-import { DEFAULT_APP_ID, DEFAULT_SYMBOL, isValidAppId, tokenShapeWarning } from '../broker/derivClient';
+import {
+  DEFAULT_APP_ID,
+  DEFAULT_SYMBOL,
+  isDemoAccountId,
+  isValidAppId,
+  tokenShapeWarning,
+} from '../broker/derivClient';
 import { TextField, Toggle } from '../components/ui';
 import type { SessionState } from '../backend/session';
 
@@ -55,6 +61,11 @@ export function SignIn({ session }: { session: SessionState }) {
   // Nothing here judges length — Deriv issues tokens of more than one size, so
   // the field reports its count and lets Deriv decide.
   const tokenWarning = tokenShapeWarning(token);
+
+  // Which account is about to be traded matters most when live routing is on,
+  // so the kind is named under the field rather than discovered afterwards.
+  const accountKind =
+    accountId.trim().length === 0 ? null : isDemoAccountId(accountId) ? 'demo' : 'real';
 
   const connect = async () => {
     setBusy('connect');
@@ -125,8 +136,14 @@ export function SignIn({ session }: { session: SessionState }) {
             label="Account id"
             value={accountId}
             onChange={setAccountId}
-            placeholder="CR1234567"
-            hint="The Deriv account to trade — CR… for real, VRTC… for demo. This is what tells Deriv which account the token is opening."
+            placeholder="DOT93898941"
+            hint={
+              accountKind === 'demo'
+                ? 'Reads as a demo account — practice money.'
+                : accountKind === 'real'
+                  ? 'Reads as a real account — real money.'
+                  : 'The Deriv account to trade: DOT… is demo, ROT… is real. This is what tells Deriv which account the token opens.'
+            }
           />
           <TextField
             label="Symbol"
@@ -182,10 +199,14 @@ export function SignIn({ session }: { session: SessionState }) {
 
         {liveExecution && (
           <p className="mt-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs leading-relaxed text-warn">
-            Live trading is armed. Once the bot is running it will buy and sell real {multiplier}×
-            multiplier contracts on this Deriv account — up to its concurrent-position cap, each one
-            staking real money. Try it on a Deriv demo account first, and check the caps on Trade
-            Settings before arming the bot.
+            Live trading is armed. Once the bot is running it will buy and sell {multiplier}× multiplier
+            contracts on{' '}
+            {accountKind === 'demo'
+              ? ` ${accountId.trim()}, a demo account, so the money is practice money`
+              : accountKind === 'real'
+                ? ` ${accountId.trim()} — a real account, staking real money`
+                : ' this Deriv account, each contract staking real money'}{' '}
+            — up to its concurrent-position cap. Check the caps on Trade Settings before arming the bot.
           </p>
         )}
 
