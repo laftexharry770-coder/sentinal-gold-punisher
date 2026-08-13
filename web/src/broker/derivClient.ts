@@ -65,9 +65,18 @@ export const DEFAULT_SYMBOL = 'frxXAUUSD';
  */
 export const CONTRACT_SIZE = 100;
 
+/**
+ * Which market the terminal is for.
+ *
+ * The two are different instruments with different contracts and different
+ * maths, so they get different screens rather than one screen with switches.
+ */
+export type TradingMode = 'gold' | 'digits';
+
 export interface DerivCredentials {
   token: string;
   appId: string;
+  mode: TradingMode;
   /**
    * The Deriv account the session runs on, e.g. DOT93898941 or ROT92291419.
    * Set, it selects Deriv's current scheme, where the token is exchanged over
@@ -120,6 +129,33 @@ export interface DerivMt5Account {
   accountType: string;
   marketType: string;
 }
+
+/** Deriv's names for the digit contracts. */
+export type DerivDigitContract =
+  | 'DIGITMATCH'
+  | 'DIGITDIFF'
+  | 'DIGITEVEN'
+  | 'DIGITODD'
+  | 'DIGITOVER'
+  | 'DIGITUNDER';
+
+/** Only these carry a barrier; sending one with the others is rejected. */
+const DIGIT_NEEDS_BARRIER = new Set<DerivDigitContract>([
+  'DIGITMATCH',
+  'DIGITDIFF',
+  'DIGITOVER',
+  'DIGITUNDER',
+]);
+
+/** Maps our contract vocabulary onto Deriv's. */
+export const DIGIT_CONTRACT_NAMES: Record<string, DerivDigitContract> = {
+  matches: 'DIGITMATCH',
+  differs: 'DIGITDIFF',
+  even: 'DIGITEVEN',
+  odd: 'DIGITODD',
+  over: 'DIGITOVER',
+  under: 'DIGITUNDER',
+};
 
 /** A live Deriv contract, normalised from `proposal_open_contract`. */
 export interface DerivContract {
@@ -794,6 +830,114 @@ export class DerivClient {
     });
   }
 
+  /**
+   * Streams one symbol's ticks, and hands back the way to stop.
+   *
+   * The digits desk watches many symbols at once, so each subscription has to
+   * be individually closeable — otherwise leaving the screen leaves Deriv
+   * pushing ticks nobody reads, against a per-connection subscription limit.
+   */
+  async streamSymbol(
+    symbol: string,
+    handler: (quote: number, epoch: number) => void,
+  ): Promise<() => void> {
+    const reply = await this.send({ ticks: symbol, subscribe: 1 }, (message) => {
+      const tick = message.tick as Record<string, unknown> | undefined;
+      if (!tick) return;
+      const quote = num(tick.quote);
+      if (quote > 0) handler(quote, num(tick.epoch) * 1000 || Date.now());
+    });
+
+    const id = (reply.subscription as { id?: string } | undefined)?.id;
+    return () => {
+      if (!id) return;
+      this.subscriptionIds.delete(id);
+      this.send({ forget: id }).catch(() => undefined);
+    };
+  }
+
+  /**
+   * The synthetic indices digit contracts are traded on.
+   *
+   * Deriv generates these rather than sourcing them from a market, which is
+   * why they run around the clock and why their digits are uniform.
+   */
+  async digitSymbols(): Promise<DerivSymbolInfo[]> {
+    const symbols = await this.activeSymbols();
+    return symbols.filter(
+      (entry) => /synthetic|volatility/i.test(entry.market) || /^(R_|1HZ|BOOM|CRASH|JD)/i.test(entry.symbol),
+    );
+  }
+
+  /**
+   * Asks Deriv what a digit contract would cost and pay, without buying it.
+   *
+   * The payout is the only honest input to whether a contract is worth taking,
+   * so it comes from Deriv rather than from an assumption here.
+   */
+  async digitProposal(input: {
+    symbol: string;
+    contract: DerivDigitContract;
+    barrier: number;
+    stake: number;
+    ticks: number;
+    currency: string;
+  }): Promise<{ payout: number; askPrice: number; longcode: string }> {
+    const reply = await this.send({
+      proposal: 1,
+      amount: input.stake,
+      basis: 'stake',
+      contract_type: input.contract,
+      currency: input.currency,
+      duration: input.ticks,
+      duration_unit: 't',
+      symbol: input.symbol,
+      ...(DIGIT_NEEDS_BARRIER.has(input.contract) ? { barrier: String(input.barrier) } : {}),
+    });
+
+    const proposal = reply.proposal as Record<string, unknown> | undefined;
+    return {
+      payout: num(proposal?.payout),
+      askPrice: num(proposal?.ask_price, input.stake),
+      longcode: String(proposal?.longcode ?? ''),
+    };
+  }
+
+  /** Buys a digit contract at market, capped at the price Deriv just quoted. */
+  async buyDigit(input: {
+    symbol: string;
+    contract: DerivDigitContract;
+    barrier: number;
+    stake: number;
+    ticks: number;
+    currency: string;
+  }): Promise<{ contractId: string; buyPrice: number; payout: number; longcode: string }> {
+    const reply = await this.send({
+      buy: '1',
+      price: input.stake,
+      parameters: {
+        amount: input.stake,
+        basis: 'stake',
+        contract_type: input.contract,
+        currency: input.currency,
+        duration: input.ticks,
+        duration_unit: 't',
+        symbol: input.symbol,
+        ...(DIGIT_NEEDS_BARRIER.has(input.contract) ? { barrier: String(input.barrier) } : {}),
+      },
+    });
+
+    const result = reply.buy as Record<string, unknown> | undefined;
+    const contractId = result ? String(result.contract_id ?? '') : '';
+    if (!contractId) throw new BrokerError('Deriv accepted the request but returned no contract.', 'NoContract');
+    return {
+      contractId,
+      buyPrice: num(result?.buy_price, input.stake),
+      payout: num(result?.payout),
+      longcode: String(result?.longcode ?? ''),
+    };
+  }
+
   /** Contracts currently open, used to seed the book before the stream warms up. */
   async portfolio(): Promise<string[]> {
     const reply = await this.send({ portfolio: 1 });
@@ -916,6 +1060,7 @@ export function loadCredentials(): DerivCredentials | null {
     return {
       token: parsed.token,
       appId: parsed.appId ?? DEFAULT_APP_ID,
+      mode: parsed.mode === 'digits' ? 'digits' : 'gold',
       accountId: parsed.accountId ?? '',
       symbol: parsed.symbol ?? DEFAULT_SYMBOL,
       multiplier: Number(parsed.multiplier) > 0 ? Number(parsed.multiplier) : 100,

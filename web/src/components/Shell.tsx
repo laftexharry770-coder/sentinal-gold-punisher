@@ -5,9 +5,57 @@ import type { SessionState } from '../backend/session';
 import { onInstallAvailability, promptInstall } from '../pwa';
 import { useTerminal } from '../store';
 
-export type ScreenId = 'dashboard' | 'bot' | 'settings' | 'brokers';
+export type ScreenId = 'dashboard' | 'digits' | 'bot' | 'settings' | 'brokers';
 
-export const SCREENS: { id: ScreenId; label: string; short: string; icon: ReactNode }[] = [
+type ScreenDef = { id: ScreenId; label: string; short: string; icon: ReactNode };
+
+/**
+ * Screens for the digits desk. The two modes share the shell and nothing
+ * else — a gold chart on a digits session would be furniture for a market
+ * this session is not trading.
+ */
+export const DIGIT_SCREENS: ScreenDef[] = [
+  {
+    id: 'digits',
+    label: 'Digits Desk',
+    short: 'Digits',
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" style={{ height: 18, width: 18 }}>
+        <rect x="3" y="4.5" width="14" height="11" rx="2" stroke="currentColor" strokeWidth="1.6" />
+        <path d="M6.5 12V8l-1.2.8M11 8h2.5l-1.4 2a1.6 1.6 0 1 1-1.1 2.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    id: 'settings',
+    label: 'Trade Settings',
+    short: 'Settings',
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" style={{ height: 18, width: 18 }}>
+        <circle cx="10" cy="10" r="2.6" stroke="currentColor" strokeWidth="1.6" />
+        <path
+          d="M10 2.6v2M10 15.4v2M17.4 10h-2M4.6 10h-2M15.2 4.8l-1.4 1.4M6.2 13.8l-1.4 1.4M15.2 15.2l-1.4-1.4M6.2 6.2 4.8 4.8"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+  {
+    id: 'brokers',
+    label: 'Account',
+    short: 'Account',
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" style={{ height: 18, width: 18 }}>
+        <path d="M8.2 11.8 6 14a2.8 2.8 0 1 1-4-4l2.2-2.2M11.8 8.2 14 6a2.8 2.8 0 1 1 4 4l-2.2 2.2M7.6 12.4l4.8-4.8"
+          stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+];
+
+export const SCREENS: ScreenDef[] = [
   {
     id: 'dashboard',
     label: 'Trading Dashboard',
@@ -232,7 +280,9 @@ export function Shell({
   children: ReactNode;
 }) {
   const { connected, portfolio, stats } = useTerminal();
-  const active = SCREENS.find((s) => s.id === screen);
+  const mode = session.status === 'live' ? session.mode : 'gold';
+  const screens = mode === 'digits' ? DIGIT_SCREENS : SCREENS;
+  const active = screens.find((s) => s.id === screen);
 
   return (
     <div className="app-shell flex bg-transparent">
@@ -240,7 +290,7 @@ export function Shell({
       <aside className="app-scroll hidden w-60 shrink-0 flex-col border-r border-[var(--color-line)] bg-[var(--color-surface)]/70 px-4 py-5 backdrop-blur lg:flex">
         <Logo />
         <nav className="mt-7 flex flex-col gap-1">
-          {SCREENS.map((item) => (
+          {screens.map((item) => (
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
@@ -300,21 +350,27 @@ export function Shell({
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <div className="hidden sm:block">
-              <QuoteStrip />
-            </div>
+            {/* The gold strip and the bot belong to the gold session. A digits
+                session shows neither: its market is chosen on its own desk. */}
+            {mode === 'gold' && (
+              <div className="hidden sm:block">
+                <QuoteStrip />
+              </div>
+            )}
             <SessionBadge session={session} />
             <InstallButton />
-            <BotSwitch />
+            {mode === 'gold' && <BotSwitch />}
           </div>
         </header>
 
-        <div className="sm:hidden">
-          <div className="flex items-center justify-between border-b border-[var(--color-line)] bg-[var(--color-surface)]/60 px-4 py-2">
-            <QuoteStrip />
-            <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-profit live-dot' : 'bg-loss'}`} />
+        {mode === 'gold' && (
+          <div className="sm:hidden">
+            <div className="flex items-center justify-between border-b border-[var(--color-line)] bg-[var(--color-surface)]/60 px-4 py-2">
+              <QuoteStrip />
+              <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-profit live-dot' : 'bg-loss'}`} />
+            </div>
           </div>
-        </div>
+        )}
 
         <main className="app-scroll min-h-0 flex-1 px-3 pb-28 pt-3 sm:px-4 lg:px-6 lg:pb-6">{children}</main>
       </div>
@@ -322,7 +378,7 @@ export function Shell({
       {/* Bottom tabs — mobile */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-line)] bg-[var(--color-base)]/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
         <div className="flex">
-          {SCREENS.map((item) => (
+          {screens.map((item) => (
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}

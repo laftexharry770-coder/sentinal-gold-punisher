@@ -7,7 +7,12 @@ import type {
   Position,
   ServerMessage,
 } from '@sentinal/shared';
-import type { DerivCredentials, DerivMt5Account } from '../broker/derivClient';
+import type {
+  DerivCredentials,
+  DerivDigitContract,
+  DerivMt5Account,
+  DerivSymbolInfo,
+} from '../broker/derivClient';
 import type { ConnectInput, SessionState } from './session';
 
 export interface NewAccountPayload {
@@ -20,6 +25,15 @@ export interface NewAccountPayload {
   leverage?: number;
   initialBalance?: number;
   copy?: Partial<CopySettings>;
+}
+
+export interface DigitOrder {
+  symbol: string;
+  contract: DerivDigitContract;
+  barrier: number;
+  stake: number;
+  ticks: number;
+  currency: string;
 }
 
 export interface OrderPayload {
@@ -73,6 +87,17 @@ export interface TerminalBackend {
    * them; it proves the account is yours but grants no way to trade it.
    */
   verifyMt5(login: string, password: string, kind: 'main' | 'investor'): Promise<void>;
+
+  /* --- digits desk: synthetic indices and their digit contracts --- */
+
+  /** The synthetic indices digit contracts trade on. */
+  digitSymbols(): Promise<DerivSymbolInfo[]>;
+  /** Streams one symbol's quotes. Resolves with the way to stop. */
+  streamDigits(symbol: string, handler: (quote: number, epoch: number) => void): Promise<() => void>;
+  /** What Deriv would pay for a contract, asked before it is bought. */
+  digitProposal(input: DigitOrder): Promise<{ payout: number; askPrice: number; longcode: string }>;
+  /** Buys a digit contract. */
+  buyDigit(input: DigitOrder): Promise<{ contractId: string; buyPrice: number; payout: number; longcode: string }>;
 
   addAccount(payload: NewAccountPayload): Promise<AccountState>;
   updateAccount(

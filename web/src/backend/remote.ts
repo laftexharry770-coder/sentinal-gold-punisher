@@ -35,6 +35,7 @@ export function createRemoteBackend(): TerminalBackend {
     status: 'live',
     broker: { login: '', server: 'execution server', broker: 'Sentinal', currency: 'USD' },
     execution: 'broker',
+    mode: 'gold',
   };
 
   return {
@@ -51,6 +52,14 @@ export function createRemoteBackend(): TerminalBackend {
     savedCredentials: () => null,
     // The execution server holds no Deriv session of its own.
     mt5Accounts: async () => [],
+    digitSymbols: async () => [],
+    streamDigits: async () => () => {},
+    digitProposal: async () => {
+      throw new Error('The digits desk runs against a Deriv session in the browser build.');
+    },
+    buyDigit: async () => {
+      throw new Error('The digits desk runs against a Deriv session in the browser build.');
+    },
     verifyMt5: async () => {
       throw new Error('MT5 sign-in runs through a Deriv session in the browser build.');
     },
