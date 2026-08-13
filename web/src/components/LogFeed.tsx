@@ -1,4 +1,5 @@
 import type { AccountState, LogEntry, LogLevel } from '@sentinal/shared';
+import { formatClockWithSeconds } from '../time';
 import { EmptyState } from './ui';
 
 const LEVEL_STYLE: Record<LogLevel, { dot: string; text: string; label: string }> = {
@@ -9,13 +10,6 @@ const LEVEL_STYLE: Record<LogLevel, { dot: string; text: string; label: string }
   trade: { dot: 'bg-[var(--color-accent-bright)]', text: 'text-[var(--color-accent-bright)]', label: 'EXEC' },
   copy: { dot: 'bg-gold', text: 'text-gold', label: 'COPY' },
 };
-
-function clock(time: number): string {
-  const d = new Date(time);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(
-    d.getSeconds(),
-  ).padStart(2, '0')}`;
-}
 
 export function LogFeed({
   logs,
@@ -41,7 +35,7 @@ export function LogFeed({
             className="flex items-start gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--color-surface-2)]/70"
           >
             <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${style.dot}`} />
-            <span className="tabular shrink-0 text-[var(--color-ink-muted)]">{clock(entry.time)}</span>
+            <span className="tabular shrink-0 text-[var(--color-ink-muted)]">{formatClockWithSeconds(entry.time)}</span>
             <span className={`shrink-0 text-[0.625rem] font-bold tracking-wider ${style.text}`}>{style.label}</span>
             <span className="min-w-0 flex-1 leading-relaxed text-[var(--color-ink-dim)]">
               {account && <span className="mr-1 font-medium text-ink">[{account.name}]</span>}

@@ -136,7 +136,7 @@ export function SignIn({ session }: { session: SessionState }) {
             label="Account id"
             value={accountId}
             onChange={setAccountId}
-            placeholder="DOT93898941"
+            placeholder="DOT12345678"
             hint={
               accountKind === 'demo'
                 ? 'Reads as a demo account — practice money.'

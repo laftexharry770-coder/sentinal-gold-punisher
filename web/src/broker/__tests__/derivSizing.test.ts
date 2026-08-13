@@ -101,12 +101,12 @@ describe('app id validation', () => {
 describe('account id kind', () => {
   it("reads Deriv's own prefixes", () => {
     // Taken from real accounts: DOT is demo, ROT is real.
-    expect(isDemoAccountId('DOT93898941')).toBe(true);
-    expect(isDemoAccountId('ROT92291419')).toBe(false);
+    expect(isDemoAccountId('DOT12345678')).toBe(true);
+    expect(isDemoAccountId('ROT12345678')).toBe(false);
     // The older accounts use VRTC and CR.
     expect(isDemoAccountId('VRTC1234567')).toBe(true);
     expect(isDemoAccountId('CR1234567')).toBe(false);
-    expect(isDemoAccountId(' dot93898941 ')).toBe(true);
+    expect(isDemoAccountId(' dot12345678 ')).toBe(true);
   });
 
   it('calls an unfamiliar prefix real, which is the safe way to be wrong', () => {

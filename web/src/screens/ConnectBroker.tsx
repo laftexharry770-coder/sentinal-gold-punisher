@@ -256,7 +256,7 @@ function Mt5SignIn({ onVerified }: { onVerified: (login: string) => void }) {
         label="Login id"
         value={login}
         onChange={setLogin}
-        placeholder="41204838"
+        placeholder="12345678"
         inputMode="numeric"
         hint="The Login ID under Account details, without the server name."
       />

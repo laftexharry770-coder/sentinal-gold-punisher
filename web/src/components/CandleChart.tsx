@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Candle, Position, Tick } from '@sentinal/shared';
+import { formatClock, formatDay } from '../time';
 
 interface Props {
   candles: Candle[];
@@ -43,15 +44,6 @@ interface View {
   bars: number;
   /** Candles hidden off the right edge. Zero means pinned to the latest bar. */
   offset: number;
-}
-
-function formatClock(time: number): string {
-  const d = new Date(time);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-function formatDay(time: number): string {
-  return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' }).format(time);
 }
 
 /**

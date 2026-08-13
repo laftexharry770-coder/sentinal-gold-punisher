@@ -69,7 +69,7 @@ export interface DerivCredentials {
   token: string;
   appId: string;
   /**
-   * The Deriv account the session runs on, e.g. DOT93898941 or ROT92291419.
+   * The Deriv account the session runs on, e.g. DOT12345678 or ROT12345678.
    * Set, it selects Deriv's current scheme, where the token is exchanged over
    * REST for a socket that is already signed in. Empty, the older flow signs
    * in over the socket instead.
@@ -764,7 +764,7 @@ export class DerivClient {
         const entry = raw as Record<string, unknown>;
         const server = entry.server_info as { id?: unknown } | undefined;
         return {
-          // Deriv prefixes the login (MTD41204838); the bare digits are what
+          // Deriv prefixes the login (MTD12345678); the bare digits are what
           // MetaTrader itself shows, so both halves are kept legible.
           login: String(entry.login ?? '').replace(/^MT[DR]?/i, ''),
           server: String(server?.id ?? entry.server ?? ''),
