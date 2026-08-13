@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { grossProfit, type SymbolSpec } from '@sentinal/shared';
-import { CONTRACT_SIZE, goldCandidates, isValidAppId, stakeFor, volumeFor } from '../derivClient';
+import {
+  CONTRACT_SIZE,
+  goldCandidates,
+  isValidAppId,
+  stakeFor,
+  tokenShapeWarning,
+  volumeFor,
+} from '../derivClient';
 
 /**
  * Deriv stakes money; the engine sizes lots. The two only agree if the
@@ -86,6 +93,24 @@ describe('app id validation', () => {
     expect(isValidAppId('a1b2c3d4')).toBe(false);
     expect(isValidAppId('108.9')).toBe(false);
     expect(isValidAppId('')).toBe(false);
+  });
+});
+
+describe('token shape', () => {
+  it('passes tokens of any length, since Deriv owns that format', () => {
+    // Deliberately not length-checked: a rule guessed here could lock someone
+    // out of a token that works.
+    expect(tokenShapeWarning('a1b2c3d4e5f6g7h')).toBeNull();
+    expect(tokenShapeWarning('346nAVo5UnAYrR28llELJ')).toBeNull();
+    expect(tokenShapeWarning('  padded-token_9  ')).toBeNull();
+    expect(tokenShapeWarning('')).toBeNull();
+  });
+
+  it('flags a copy that plainly went wrong', () => {
+    expect(tokenShapeWarning('abc def')).toMatch(/space or line break/);
+    expect(tokenShapeWarning('abc\ndef')).toMatch(/space or line break/);
+    expect(tokenShapeWarning('token: abc')).toMatch(/space or line break/);
+    expect(tokenShapeWarning('"abc123"')).toMatch(/punctuation/);
   });
 });
 

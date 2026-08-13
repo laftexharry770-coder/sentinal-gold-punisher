@@ -115,21 +115,51 @@ interface Envelope {
 
 type StreamHandler = (message: Envelope) => void;
 
-/** Rephrases Deriv's error codes into something an operator can act on. */
+/**
+ * Turns a Deriv error into something an operator can act on.
+ *
+ * Deriv's own message is always kept: it distinguishes a token that is
+ * malformed from one that is valid but for another app or account, and no
+ * guess made here can tell those apart. Advice is added after it, never
+ * instead of it.
+ */
 function describe(code: string, message: string): string {
+  const said = message ? `Deriv said: “${message}”` : `Deriv returned ${code || 'an error'}.`;
+
   switch (code) {
     case 'InvalidToken':
     case 'AuthorizationRequired':
-      return 'Deriv rejected the token. Create one at Settings → API token with the Read and Trade scopes.';
+      return (
+        `${said} Check the whole token was copied — a truncated paste looks exactly like a wrong one — and ` +
+        'that it was created on the Deriv account you mean to trade, under Settings → API token, with the ' +
+        'Read scope (plus Trade to place orders).'
+      );
     case 'PermissionDenied':
-      return 'This token lacks the Trade scope, so it can read the account but not place orders.';
+      return `${said} The token is valid but lacks the scope for that call — Trade is the one needed to place orders.`;
     case 'RateLimit':
-      return 'Deriv is rate limiting this token. Wait a moment and reconnect.';
+      return `${said} Wait a moment and reconnect; registering your own app id at api.deriv.com raises the limit.`;
     case 'MarketIsClosed':
-      return 'The gold market is closed on Deriv right now.';
+      return `${said} Gold is closed on Deriv right now.`;
     default:
-      return message || `Deriv request failed (${code}).`;
+      return message ? `${said} (${code})` : `Deriv request failed (${code}).`;
   }
+}
+
+/**
+ * Flags a token that cannot be right before Deriv is asked.
+ *
+ * Deliberately narrow: only faults that are certain from the text itself, so
+ * a change to Deriv's token format cannot make this reject a working token.
+ * Length is not checked for that reason.
+ */
+export function tokenShapeWarning(token: string): string | null {
+  const trimmed = token.trim();
+  if (trimmed.length === 0) return null;
+  if (/\s/.test(trimmed)) return 'This token has a space or line break inside it — copy it again.';
+  if (!/^[A-Za-z0-9_-]+$/.test(trimmed)) {
+    return 'This token has punctuation in it, so something other than the token was copied.';
+  }
+  return null;
 }
 
 function num(value: unknown, fallback = 0): number {
@@ -359,7 +389,21 @@ export class DerivClient {
     const token = this.credentials.token.trim();
     if (!token) throw new BrokerError('An API token is required.', 'InvalidToken');
 
-    const reply = await this.send({ authorize: token });
+    let reply: Envelope;
+    try {
+      reply = await this.send({ authorize: token });
+    } catch (err) {
+      // Deriv cannot say whether a rejected token was mistyped or truncated,
+      // but the length can, and it gives that away without printing a secret.
+      if (err instanceof BrokerError && (err.code === 'InvalidToken' || err.code === 'AuthorizationRequired')) {
+        throw new BrokerError(
+          `${err.message} (${token.length} characters were sent, with app id ${this.credentials.appId.trim() || DEFAULT_APP_ID})`,
+          err.code,
+        );
+      }
+      throw err;
+    }
+
     const auth = reply.authorize as Record<string, unknown> | undefined;
     if (!auth) throw new BrokerError('Deriv did not return an account for this token.', 'InvalidToken');
 

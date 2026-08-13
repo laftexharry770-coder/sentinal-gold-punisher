@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api';
-import { DEFAULT_APP_ID, DEFAULT_SYMBOL, isValidAppId } from '../broker/derivClient';
+import { DEFAULT_APP_ID, DEFAULT_SYMBOL, isValidAppId, tokenShapeWarning } from '../broker/derivClient';
 import { TextField, Toggle } from '../components/ui';
 import type { SessionState } from '../backend/session';
 
@@ -36,6 +36,11 @@ export function SignIn({ session }: { session: SessionState }) {
       ? 'An app id is a number. This looks like your API token — put it in the box above.'
       : null;
   const ready = token.trim().length > 0 && appIdError === null;
+
+  // A warning rather than a block: it flags a copy that clearly went wrong,
+  // but an over-strict rule here would lock someone out of a working token, so
+  // Deriv still gets the final say.
+  const tokenWarning = tokenShapeWarning(token);
 
   const connect = async () => {
     setBusy('connect');
@@ -98,6 +103,7 @@ export function SignIn({ session }: { session: SessionState }) {
             value={token}
             onChange={setToken}
             placeholder="a1b2c3d4e5f6g7h8"
+            error={tokenWarning}
             hint="Stays in this browser. Sent only to Deriv, never anywhere else."
           />
           <TextField
