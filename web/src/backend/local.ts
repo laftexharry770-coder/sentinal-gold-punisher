@@ -354,6 +354,11 @@ export function createLocalBackend(): TerminalBackend {
     // terminal is fully usable either way.
     mt5Accounts: async () => (client ? client.mt5Accounts().catch(() => []) : []),
 
+    verifyMt5: async (login, password, kind) => {
+      if (!client) throw new Error('Connect your Deriv account first — MT5 is checked through it.');
+      await client.checkMt5Password(login.trim(), password, kind);
+    },
+
     /* ---------------------------- commands ---------------------------- */
 
     addAccount: async (payload: NewAccountPayload) =>

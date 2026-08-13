@@ -6,6 +6,9 @@
 /* ------------------------------------------------------------------ */
 
 @theme {
+  /* A step below Tailwind's smallest default, for phones at 360-412px. */
+  --breakpoint-xs: 24rem;
+
   --font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
@@ -34,21 +37,60 @@
 
 @layer base {
   html,
-  body,
-  #root {
+  body {
     height: 100%;
+  }
+
+  /*
+   * min-height, not height: a page taller than the viewport must be able to
+   * grow and scroll. A fixed height here clipped the sign-in form on a phone,
+   * where the browser chrome leaves less room than 100vh claims.
+   */
+  #root {
+    min-height: 100%;
   }
 
   body {
     background:
-      radial-gradient(1100px 620px at 78% -12%, rgba(59, 130, 246, 0.16), transparent 62%),
-      radial-gradient(760px 520px at 6% 4%, rgba(29, 78, 216, 0.12), transparent 58%),
+      radial-gradient(1200px 680px at 80% -14%, rgba(59, 130, 246, 0.15), transparent 64%),
+      radial-gradient(820px 560px at 4% 2%, rgba(29, 78, 216, 0.11), transparent 60%),
+      radial-gradient(900px 500px at 50% 112%, rgba(245, 185, 59, 0.05), transparent 66%),
       var(--color-base);
+    background-attachment: fixed;
     color: var(--color-ink);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     overscroll-behavior-y: none;
+    /* iOS keeps text from inflating in landscape without disabling zoom. */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /*
+   * A single stop of grain over the whole page. Large flat darks band on OLED
+   * phones and read as unfinished; a little noise breaks the gradient up and
+   * is what stops the surface looking printed rather than lit.
+   */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Headings tighten as they grow, the way set type does. */
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.011em;
   }
 
   ::-webkit-scrollbar {
@@ -81,17 +123,27 @@
 }
 
 @layer components {
+  /*
+   * Panels are lit from above: a hairline highlight along the top edge, a
+   * shadow that falls away below. It is what separates a surface sitting on
+   * the page from a rectangle drawn on it.
+   */
   .card {
-    background: linear-gradient(160deg, rgba(17, 27, 46, 0.94), rgba(12, 19, 34, 0.94));
+    position: relative;
+    background: linear-gradient(162deg, rgba(19, 30, 51, 0.95), rgba(11, 18, 32, 0.96));
     border: 1px solid var(--color-line);
     border-radius: var(--radius-card);
-    box-shadow: 0 18px 44px -28px rgba(2, 6, 20, 0.95);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.045),
+      0 1px 2px -1px rgba(2, 6, 20, 0.9),
+      0 22px 48px -32px rgba(2, 6, 20, 0.95);
   }
 
   .card-flush {
-    background: rgba(12, 19, 34, 0.72);
+    background: rgba(12, 19, 34, 0.7);
     border: 1px solid var(--color-line);
     border-radius: var(--radius-card);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.028);
   }
 
   .chip {
@@ -119,8 +171,19 @@
     border: 1px solid var(--color-line);
     color: var(--color-ink);
     background: var(--color-surface-2);
-    transition: background 140ms ease, border-color 140ms ease, transform 140ms ease, opacity 140ms ease;
+    transition:
+      background 140ms ease,
+      border-color 140ms ease,
+      transform 90ms ease,
+      box-shadow 140ms ease,
+      opacity 140ms ease;
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:focus-visible,
+  .field:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-base), 0 0 0 4px rgba(96, 165, 250, 0.65);
   }
   .btn:hover:not(:disabled) {
     background: var(--color-surface-3);
@@ -138,7 +201,9 @@
     background: linear-gradient(180deg, var(--color-cobalt), var(--color-cobalt-deep));
     border-color: #2f6fe0;
     color: #f4f8ff;
-    box-shadow: 0 10px 26px -14px rgba(59, 130, 246, 0.9);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+      0 10px 26px -14px rgba(59, 130, 246, 0.9);
   }
   .btn-primary:hover:not(:disabled) {
     background: linear-gradient(180deg, var(--color-cobalt-bright), var(--color-cobalt));
@@ -161,18 +226,31 @@
 
   .field {
     width: 100%;
-    background: #0a1220;
+    background: #09101c;
     border: 1px solid var(--color-line);
     border-radius: 10px;
-    padding: 0.5rem 0.7rem;
-    font-size: 0.875rem;
+    padding: 0.55rem 0.7rem;
+    /* 16px stops iOS zooming the page when a field takes focus. */
+    font-size: 16px;
     color: var(--color-ink);
     outline: none;
-    transition: border-color 140ms ease, box-shadow 140ms ease;
+    box-shadow: inset 0 1px 2px 0 rgba(2, 6, 20, 0.55);
+    transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+  }
+  @media (min-width: 640px) {
+    .field {
+      font-size: 0.875rem;
+    }
+  }
+  .field:hover:not(:focus) {
+    border-color: #24365a;
   }
   .field:focus {
     border-color: var(--color-cobalt);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+    background: #0a1322;
+    box-shadow:
+      inset 0 1px 2px 0 rgba(2, 6, 20, 0.5),
+      0 0 0 3px rgba(59, 130, 246, 0.18);
   }
   .field::placeholder {
     color: #4d5f7d;
@@ -180,12 +258,42 @@
 
   .label {
     display: block;
-    font-size: 0.6875rem;
+    font-size: 0.625rem;
     font-weight: 600;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.09em;
     text-transform: uppercase;
     color: var(--color-ink-muted);
-    margin-bottom: 0.375rem;
+    margin-bottom: 0.4rem;
+  }
+
+  /* The chart panel is the instrument; it gets a deeper well than a card. */
+  .chart-well {
+    position: relative;
+    border-radius: 12px;
+    background:
+      radial-gradient(120% 80% at 50% 0%, rgba(59, 130, 246, 0.06), transparent 70%),
+      #080e19;
+    box-shadow: inset 0 0 0 1px rgba(28, 41, 66, 0.9), inset 0 20px 40px -32px rgba(59, 130, 246, 0.5);
+  }
+
+  /*
+   * The terminal is an app shell: one fixed-height frame with one scrolling
+   * pane inside it. dvh follows the browser chrome as it hides and shows,
+   * which vh does not — that mismatch is what put the bottom tab bar over the
+   * content and left the last card unreachable.
+   */
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app-scroll {
+    overflow-y: auto;
+    /* A scroll that reaches its end stops there rather than dragging the page
+       behind it, which on a phone reads as the screen coming loose. */
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
   }
 
   .grid-lines {

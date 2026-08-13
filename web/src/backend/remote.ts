@@ -51,6 +51,9 @@ export function createRemoteBackend(): TerminalBackend {
     savedCredentials: () => null,
     // The execution server holds no Deriv session of its own.
     mt5Accounts: async () => [],
+    verifyMt5: async () => {
+      throw new Error('MT5 sign-in runs through a Deriv session in the browser build.');
+    },
 
     subscribe({ onMessage, onStatus }: Subscription) {
       let socket: WebSocket | null = null;

@@ -773,6 +773,23 @@ export class DerivClient {
       .filter((account) => account.login.length > 0);
   }
 
+  /**
+   * Checks an MT5 login and password with Deriv.
+   *
+   * This is as far as "signing in to MT5" can go here: Deriv will confirm the
+   * password belongs to the login, which proves the account is the operator's,
+   * but it exposes no call that places an order on it. The password is sent to
+   * Deriv and kept nowhere.
+   */
+  async checkMt5Password(login: string, password: string, kind: 'main' | 'investor'): Promise<void> {
+    await this.send({
+      mt5_password_check: 1,
+      login,
+      password,
+      password_type: kind,
+    });
+  }
+
   /** Contracts currently open, used to seed the book before the stream warms up. */
   async portfolio(): Promise<string[]> {
     const reply = await this.send({ portfolio: 1 });

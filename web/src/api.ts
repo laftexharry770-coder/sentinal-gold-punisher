@@ -32,6 +32,8 @@ export const api: TerminalBackend = {
   signOut: () => backend.signOut(),
   savedCredentials: () => backend.savedCredentials(),
   mt5Accounts: () => backend.mt5Accounts(),
+  verifyMt5: (login: string, password: string, kind: 'main' | 'investor') =>
+    backend.verifyMt5(login, password, kind),
   addAccount: (payload) => backend.addAccount(payload),
   updateAccount: (id, patch) => backend.updateAccount(id, patch),
   removeAccount: (id) => backend.removeAccount(id),

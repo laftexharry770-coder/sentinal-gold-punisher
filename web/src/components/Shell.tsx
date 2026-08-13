@@ -235,9 +235,9 @@ export function Shell({
   const active = SCREENS.find((s) => s.id === screen);
 
   return (
-    <div className="flex h-full min-h-screen bg-transparent">
+    <div className="app-shell flex bg-transparent">
       {/* Sidebar — desktop */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-[var(--color-line)] bg-[var(--color-surface)]/70 px-4 py-5 backdrop-blur lg:flex">
+      <aside className="app-scroll hidden w-60 shrink-0 flex-col border-r border-[var(--color-line)] bg-[var(--color-surface)]/70 px-4 py-5 backdrop-blur lg:flex">
         <Logo />
         <nav className="mt-7 flex flex-col gap-1">
           {SCREENS.map((item) => (
@@ -314,7 +314,7 @@ export function Shell({
           </div>
         </div>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-24 pt-3 sm:px-4 lg:px-6 lg:pb-6">{children}</main>
+        <main className="app-scroll min-h-0 flex-1 px-3 pb-28 pt-3 sm:px-4 lg:px-6 lg:pb-6">{children}</main>
       </div>
 
       {/* Bottom tabs — mobile */}

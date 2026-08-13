@@ -68,6 +68,12 @@ export interface TerminalBackend {
    */
   mt5Accounts(): Promise<DerivMt5Account[]>;
 
+  /**
+   * Confirms an MT5 login and password with Deriv. Resolves when Deriv accepts
+   * them; it proves the account is yours but grants no way to trade it.
+   */
+  verifyMt5(login: string, password: string, kind: 'main' | 'investor'): Promise<void>;
+
   addAccount(payload: NewAccountPayload): Promise<AccountState>;
   updateAccount(
     id: string,

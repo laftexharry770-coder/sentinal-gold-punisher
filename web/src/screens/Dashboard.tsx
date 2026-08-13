@@ -148,7 +148,9 @@ export function Dashboard() {
           className="self-start"
           bodyClass="p-2"
         >
-          <CandleChart candles={candles} quote={quote} positions={positions} height={360} />
+          <div className="chart-well overflow-hidden">
+            <CandleChart candles={candles} quote={quote} positions={positions} height={360} />
+          </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-2 pb-1 pt-2 text-[0.6875rem] text-[var(--color-ink-muted)]">
             <span className="flex items-center gap-1.5">
               <span className="h-0.5 w-4 bg-[var(--color-cobalt)]" /> live mid
@@ -158,6 +160,9 @@ export function Dashboard() {
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-0.5 w-4 bg-loss" /> short entries
+            </span>
+            <span className="hidden text-[var(--color-ink-muted)]/70 sm:inline">
+              drag to pan · scroll or pinch to zoom · double-tap to return
             </span>
             {stats?.lastSignal && (
               <span className="ml-auto">

@@ -89,7 +89,7 @@ export function SignIn({ session }: { session: SessionState }) {
   };
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-5 px-5 py-10">
+    <div className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col justify-center gap-5 px-5 py-10">
       <header className="flex items-center gap-3">
         <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-[var(--color-cobalt-bright)] to-[var(--color-cobalt-deep)] shadow-[0_10px_24px_-12px_rgba(59,130,246,0.95)]">
           <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6" aria-hidden="true">

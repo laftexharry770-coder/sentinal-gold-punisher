@@ -186,7 +186,96 @@ function AccountCard({ account, masters }: { account: AccountState; masters: Acc
  * that places an order on one. Saying so on the screen is better than leaving
  * somebody to discover it by arming a bot that never fires.
  */
-function Mt5Accounts() {
+/**
+ * Signs in to a MetaTrader 5 account with the details MetaTrader itself shows.
+ *
+ * Deriv confirms the password belongs to the login, which is proof the account
+ * is the operator's. It is deliberately not called "connect": Deriv exposes no
+ * call that places an order on an MT5 account, so verifying one changes what
+ * the terminal knows, not where its orders go.
+ */
+function Mt5SignIn({ onVerified }: { onVerified: (login: string) => void }) {
+  const [login, setLogin] = useState('');
+  const [password, setPassword] = useState('');
+  const [kind, setKind] = useState<'main' | 'investor'>('main');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    setOk(null);
+    try {
+      await api.verifyMt5(login, password, kind);
+      setOk(`Deriv confirmed ${login.trim()}.`);
+      // The password has done its job; nothing keeps it around.
+      setPassword('');
+      onVerified(login.trim());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Deriv would not confirm those details.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card title="Sign in to MetaTrader 5" subtitle="Verify the account with Deriv" bodyClass="p-4 space-y-3">
+      <p className="text-xs leading-relaxed text-[var(--color-ink-dim)]">
+        The login and server shown in your Deriv MT5 account, with its password. Deriv checks them and
+        confirms the account is yours.
+      </p>
+
+      <TextField
+        label="Login id"
+        value={login}
+        onChange={setLogin}
+        placeholder="41204838"
+        inputMode="numeric"
+        hint="The Login ID under Account details, without the server name."
+      />
+      <TextField
+        label="Password"
+        secret
+        value={password}
+        onChange={setPassword}
+        placeholder="••••••••"
+        hint="Sent to Deriv to be checked, and held nowhere — not in this browser, not after this check."
+      />
+      <Segmented
+        label="Password type"
+        value={kind}
+        onChange={setKind}
+        options={[
+          { value: 'main', label: 'Main' },
+          { value: 'investor', label: 'Investor' },
+        ]}
+      />
+
+      {error && (
+        <p className="rounded-lg border border-loss/40 bg-loss/10 px-3 py-2 text-xs leading-relaxed text-loss">
+          {error}
+        </p>
+      )}
+      {ok && (
+        <p className="rounded-lg border border-profit/40 bg-profit/10 px-3 py-2 text-xs leading-relaxed text-profit">
+          {ok} Its balance is listed above. Orders still go to your Deriv account — Deriv's API has no call
+          that places one on MT5.
+        </p>
+      )}
+
+      <button
+        className="btn btn-primary w-full py-2"
+        disabled={busy || login.trim().length === 0 || password.length === 0}
+        onClick={() => void submit()}
+      >
+        {busy ? 'Checking with Deriv…' : 'Verify with Deriv'}
+      </button>
+    </Card>
+  );
+}
+
+function Mt5Accounts({ verified, reloadKey }: { verified: string | null; reloadKey: number }) {
   const [accounts, setAccounts] = useState<DerivMt5Account[] | null>(null);
 
   useEffect(() => {
@@ -198,7 +287,7 @@ function Mt5Accounts() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   if (accounts !== null && accounts.length === 0) return null;
 
@@ -221,6 +310,7 @@ function Mt5Accounts() {
                     {account.accountType || 'mt5'}
                   </Chip>
                   {account.marketType && <Chip tone="neutral">{account.marketType}</Chip>}
+                  {verified === account.login && <Chip tone="profit">verified</Chip>}
                 </div>
                 <p className="mt-0.5 text-[0.6875rem] text-[var(--color-ink-muted)]">{account.server}</p>
               </div>
@@ -255,6 +345,8 @@ export function ConnectBroker() {
     leverage: 500,
     initialBalance: 10_000,
   });
+  const [verifiedMt5, setVerifiedMt5] = useState<string | null>(null);
+  const [mt5Reload, setMt5Reload] = useState(0);
   const [copyMasterId, setCopyMasterId] = useState('');
   const [multiplier, setMultiplier] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -308,7 +400,13 @@ export function ConnectBroker() {
           )}
         </Card>
 
-        <Mt5Accounts />
+        <Mt5Accounts verified={verifiedMt5} reloadKey={mt5Reload} />
+        <Mt5SignIn
+          onVerified={(login) => {
+            setVerifiedMt5(login);
+            setMt5Reload((n) => n + 1);
+          }}
+        />
 
         <Card title="How routing works" bodyClass="p-4 text-xs leading-relaxed text-[var(--color-ink-dim)] space-y-2">
           <p>
