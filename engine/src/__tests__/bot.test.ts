@@ -31,6 +31,9 @@ function harness() {
   const journal = new Journal();
   const accounts = new AccountManager();
   const bot = new BotEngine(accounts, journal);
+  // These cases are about multi-position mechanics, so they pin the lot size
+  // rather than letting equity-based sizing choose it. Sizing has its own suite.
+  bot.updateConfig({ sizing: 'fixed' });
   return { journal, accounts, bot };
 }
 

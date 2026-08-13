@@ -48,6 +48,49 @@ export function priceDistanceToUsd(spec: SymbolSpec, volume: number, distance: n
   return distance * valuePerPricePoint(spec, volume);
 }
 
+export interface RiskSizing {
+  volume: number;
+  stopLossUsd: number;
+  takeProfitUsd: number;
+  /** Money actually at risk once the volume is rounded to the broker's grid. */
+  riskUsd: number;
+  /** Set when the broker's minimum lot risks more than requested. */
+  minLotExceedsRisk: boolean;
+}
+
+/**
+ * Sizes a leg from account equity.
+ *
+ * The stop stays a fixed distance in price, and the volume moves so the money
+ * at risk is the requested share of equity. Because volume is rounded to the
+ * broker's lot grid the realised risk is reported back rather than assumed.
+ */
+export function riskSizedLeg(
+  spec: SymbolSpec,
+  equity: number,
+  riskPercent: number,
+  stopDistance: number,
+  rewardRatio: number,
+): RiskSizing {
+  const distance = Math.max(spec.tickSize, stopDistance);
+  const requested = Math.max(0, equity) * (Math.max(0, riskPercent) / 100);
+  const perLot = distance * spec.contractSize;
+
+  const raw = perLot > 0 ? requested / perLot : spec.minLot;
+  const volume = roundLot(spec, raw);
+  const riskUsd = priceDistanceToUsd(spec, volume, distance);
+
+  return {
+    volume,
+    stopLossUsd: riskUsd,
+    takeProfitUsd: riskUsd * Math.max(0, rewardRatio),
+    riskUsd,
+    // Below the broker minimum the leg cannot be made smaller: risk is higher
+    // than asked for, and the caller decides whether to trade at all.
+    minLotExceedsRisk: raw < spec.minLot - 1e-9,
+  };
+}
+
 export function roundLot(spec: SymbolSpec, volume: number): number {
   const steps = Math.round(volume / spec.lotStep);
   const rounded = steps * spec.lotStep;

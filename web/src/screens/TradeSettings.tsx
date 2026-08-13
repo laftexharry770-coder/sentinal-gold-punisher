@@ -1,13 +1,46 @@
 import { useEffect, useMemo, useState } from 'react';
-import { formatMoney, type BotConfig } from '@sentinal/shared';
+import { formatMoney, getSymbolSpec, riskSizedLeg, type BotConfig } from '@sentinal/shared';
 import { api } from '../api';
 import { Card, Chip, NumberField, Segmented, Toggle } from '../components/ui';
 import { useTerminal } from '../store';
 
 type Draft = BotConfig;
 
+/** What the current account would trade under these settings, right now. */
+function SizingPreview({ draft, equity }: { draft: Draft; equity: number }) {
+  const spec = getSymbolSpec(draft.symbol);
+  const sized = riskSizedLeg(spec, equity, draft.riskPercent, draft.stopDistance, draft.rewardRatio);
+  const bookRisk = sized.riskUsd * draft.maxConcurrentPositions;
+
+  if (equity <= 0) {
+    return (
+      <p className="rounded-xl border border-[var(--color-line)] bg-[#0a1220] px-3.5 py-3 text-xs text-[var(--color-ink-muted)]">
+        Connect a broker to see the size these settings produce for your account.
+      </p>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-[var(--color-line)] bg-[#0a1220] px-3.5 py-3 text-xs text-[var(--color-ink-dim)]">
+      On {formatMoney(equity)} of equity each leg is{' '}
+      <span className="tabular font-semibold text-ink">{sized.volume.toFixed(2)} lots</span>, risking{' '}
+      <span className="tabular font-semibold text-loss">{formatMoney(sized.stopLossUsd)}</span> against{' '}
+      <span className="tabular font-semibold text-profit">{formatMoney(sized.takeProfitUsd)}</span>. A full
+      book of {draft.maxConcurrentPositions} legs risks{' '}
+      <span className="tabular font-semibold text-loss">{formatMoney(bookRisk)}</span> (
+      {((bookRisk / equity) * 100).toFixed(1)}% of equity).
+      {sized.minLotExceedsRisk && (
+        <span className="mt-1.5 block text-warn">
+          The broker minimum of {spec.minLot} lots risks more than {draft.riskPercent}% here — legs use the
+          minimum, so the real risk per leg is {formatMoney(sized.riskUsd)}.
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function TradeSettings() {
-  const { config, stats } = useTerminal();
+  const { config, stats, portfolio } = useTerminal();
   const [draft, setDraft] = useState<Draft>(config);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -112,7 +145,66 @@ export function TradeSettings() {
         />
       </Card>
 
-      <Card title="Risk per leg" subtitle="Dollar-based stop and target" bodyClass="p-4 grid gap-4 md:grid-cols-3">
+      <Card
+        title="Position sizing"
+        subtitle="How big each leg is, and what it risks"
+        actions={<Chip tone={draft.sizing === 'risk-percent' ? 'cobalt' : 'neutral'}>
+          {draft.sizing === 'risk-percent' ? 'Adaptive' : 'Fixed lot'}
+        </Chip>}
+        bodyClass="p-4 space-y-4"
+      >
+        <Segmented
+          label="Sizing mode"
+          value={draft.sizing}
+          onChange={(value) => set('sizing', value)}
+          options={[
+            { value: 'risk-percent', label: 'Risk % of equity' },
+            { value: 'fixed', label: 'Fixed lot' },
+          ]}
+        />
+
+        {draft.sizing === 'risk-percent' && (
+          <>
+            <div className="grid gap-4 md:grid-cols-3">
+              <NumberField
+                label="Risk per leg"
+                value={draft.riskPercent}
+                onChange={(v) => set('riskPercent', v)}
+                step={0.05}
+                min={0.01}
+                max={100}
+                suffix="%"
+                hint="Share of live equity risked if the stop is hit."
+              />
+              <NumberField
+                label="Stop distance"
+                value={draft.stopDistance}
+                onChange={(v) => set('stopDistance', v)}
+                step={0.1}
+                min={0.01}
+                suffix="price"
+                hint="How far price moves against the leg before the stop."
+              />
+              <NumberField
+                label="Target ratio"
+                value={draft.rewardRatio}
+                onChange={(v) => set('rewardRatio', v)}
+                step={0.1}
+                min={0.1}
+                suffix="× stop"
+                hint="0.5 takes half the stop as profit; 2 takes twice."
+              />
+            </div>
+            <SizingPreview draft={draft} equity={portfolio?.equity ?? 0} />
+          </>
+        )}
+      </Card>
+
+      <Card
+        title="Fixed risk per leg"
+        subtitle="Used when sizing is set to fixed lot"
+        bodyClass={`p-4 grid gap-4 md:grid-cols-3 ${draft.sizing === 'risk-percent' ? 'opacity-50' : ''}`}
+      >
         <NumberField
           label="Lot size"
           value={draft.lotSize}

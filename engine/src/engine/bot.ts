@@ -3,6 +3,7 @@ import {
   DEFAULT_BOT_CONFIG,
   type Candle,
   getSymbolSpec,
+  riskSizedLeg,
   type BotConfig,
   type BotStats,
   type ClosedTrade,
@@ -35,6 +36,7 @@ export class BotEngine extends Emitter {
   private haltReason: string | null = null;
   private lastSignal: Signal | null = null;
   private spreadWarnedAt = 0;
+  private warnedMinLot = false;
 
   private counters = {
     signalsEvaluated: 0,
@@ -299,6 +301,44 @@ export class BotEngine extends Emitter {
     }
   }
 
+  /**
+   * Size and levels for one leg, from the account as it stands right now.
+   *
+   * In risk-percent mode a growing account trades bigger and a shrinking one
+   * trades smaller, with the stop held at a fixed price distance so the money
+   * risked stays the configured share of equity.
+   */
+  sizeLeg(account: TradingAccount): { volume: number; stopLossUsd: number; takeProfitUsd: number } {
+    const spec = getSymbolSpec(this.config.symbol);
+    if (this.config.sizing !== 'risk-percent') {
+      return {
+        volume: this.config.lotSize,
+        stopLossUsd: this.config.stopLossUsd,
+        takeProfitUsd: this.config.takeProfitUsd,
+      };
+    }
+
+    const sized = riskSizedLeg(
+      spec,
+      account.equity(),
+      this.config.riskPercent,
+      this.config.stopDistance,
+      this.config.rewardRatio,
+    );
+
+    if (sized.minLotExceedsRisk && !this.warnedMinLot) {
+      this.warnedMinLot = true;
+      this.journal.write(
+        'warn',
+        account.id,
+        `Broker minimum ${spec.minLot} lot risks ${sized.riskUsd.toFixed(2)} — more than ` +
+          `${this.config.riskPercent}% of ${account.equity().toFixed(2)} equity. Legs use the minimum.`,
+      );
+    }
+
+    return { volume: sized.volume, stopLossUsd: sized.stopLossUsd, takeProfitUsd: sized.takeProfitUsd };
+  }
+
   private botPositions(account: TradingAccount): Position[] {
     return account.listPositions().filter((p) => BOT_ORIGINS.has(p.origin) && p.symbol === this.config.symbol);
   }
@@ -393,14 +433,16 @@ export class BotEngine extends Emitter {
 
     const legs = Math.min(this.config.entriesPerSignal, capacity);
     const opened: Position[] = [];
+    // Sized once per burst, from equity as it stands before the burst.
+    const sizing = this.sizeLeg(account);
 
     for (let i = 0; i < legs; i += 1) {
       const result = await account.submit({
         symbol: this.config.symbol,
         side,
-        volume: this.config.lotSize,
-        stopLossUsd: this.config.stopLossUsd,
-        takeProfitUsd: this.config.takeProfitUsd,
+        volume: sizing.volume,
+        stopLossUsd: sizing.stopLossUsd,
+        takeProfitUsd: sizing.takeProfitUsd,
         origin: 'bot',
         comment: `${this.config.strategy} L${i + 1}`,
         basketIndex: i,
@@ -421,7 +463,7 @@ export class BotEngine extends Emitter {
     this.journal.write(
       'trade',
       account.id,
-      `${side.toUpperCase()} ${opened.length} × ${this.config.lotSize.toFixed(2)} ${this.config.symbol} @ ${first.openPrice.toFixed(2)} — ${signal.reason} (${(signal.strength * 100).toFixed(0)}%), ${this.botPositions(account).length}/${this.config.maxConcurrentPositions} open`,
+      `${side.toUpperCase()} ${opened.length} × ${sizing.volume.toFixed(2)} ${this.config.symbol} @ ${first.openPrice.toFixed(2)} — ${signal.reason} (${(signal.strength * 100).toFixed(0)}%), ${this.botPositions(account).length}/${this.config.maxConcurrentPositions} open`,
     );
     this.publish();
   }

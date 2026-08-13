@@ -198,6 +198,19 @@ export interface BotConfig {
   /** Execution style — intrabar fires on tick, close waits for candle close. */
   execution: 'intrabar' | 'bar-close';
   strategy: 'adaptive-scalp' | 'momentum' | 'mean-reversion';
+  /**
+   * 'fixed' uses lotSize with the money stop/target below. 'risk-percent'
+   * sizes every leg from live account equity so the same fraction is risked
+   * whatever the balance.
+   */
+  sizing: 'fixed' | 'risk-percent';
+  /** Share of equity risked per leg when sizing is 'risk-percent'. */
+  riskPercent: number;
+  /** Stop distance in symbol price units — what defines the risk per lot. */
+  stopDistance: number;
+  /** Target as a multiple of the stop. 0.5 keeps the shipped 2:1 stop:target. */
+  rewardRatio: number;
+
   lotSize: number;
   stopLossUsd: number;
   takeProfitUsd: number;

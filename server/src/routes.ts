@@ -37,6 +37,9 @@ function asBoolean(value: unknown): boolean | undefined {
 export function parseBotPatch(body: Record<string, unknown>): Partial<BotConfig> {
   const patch: Partial<BotConfig> = {};
   const numeric: (keyof BotConfig)[] = [
+    'riskPercent',
+    'stopDistance',
+    'rewardRatio',
     'lotSize',
     'stopLossUsd',
     'takeProfitUsd',
@@ -69,6 +72,7 @@ export function parseBotPatch(body: Record<string, unknown>): Partial<BotConfig>
   const enabled = asBoolean(body.enabled);
   if (enabled !== undefined) patch.enabled = enabled;
 
+  if (body.sizing === 'fixed' || body.sizing === 'risk-percent') patch.sizing = body.sizing;
   if (body.execution === 'intrabar' || body.execution === 'bar-close') patch.execution = body.execution;
   if (
     body.strategy === 'adaptive-scalp' ||

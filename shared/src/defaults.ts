@@ -14,6 +14,13 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
   symbol: 'XAUUSD',
   execution: 'intrabar',
   strategy: 'adaptive-scalp',
+  // Adaptive by default: each leg risks 0.25% of equity, with the stop a $2
+  // move in gold and the target half of it, matching the shipped 2:1 profile.
+  sizing: 'risk-percent',
+  riskPercent: 0.25,
+  stopDistance: 2.0,
+  rewardRatio: 0.5,
+
   lotSize: 0.01,
   stopLossUsd: 2.0,
   takeProfitUsd: 1.0,
