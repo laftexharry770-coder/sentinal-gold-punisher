@@ -255,6 +255,34 @@ export class MetaApiClient {
     });
   }
 
+  /**
+   * Bars covering a past window, oldest first, used to measure what price did
+   * around an economic release.
+   *
+   * MetaApi walks backwards from startTime, so the request asks from the end of
+   * the window and the result is filtered to it. If the API ever returns the
+   * other side instead, the filter yields nothing and the caller reports "not
+   * enough data" rather than measuring the wrong bars.
+   */
+  async historyRange(from: number, to: number): Promise<Candle[]> {
+    const symbol = encodeURIComponent(this.credentials.symbol);
+    const bars = await this.request<RawCandle[]>(
+      `/historical-market-data/symbols/${symbol}/timeframes/15m/candles` +
+        `?startTime=${encodeURIComponent(new Date(to).toISOString())}&limit=96`,
+    );
+    return bars
+      .map((bar) => ({
+        time: new Date(bar.time).getTime(),
+        open: Number(bar.open),
+        high: Number(bar.high),
+        low: Number(bar.low),
+        close: Number(bar.close),
+        volume: Number(bar.tickVolume ?? 0),
+      }))
+      .filter((bar) => Number.isFinite(bar.close) && bar.time >= from && bar.time <= to)
+      .sort((a, b) => a.time - b.time);
+  }
+
   /** Recent M1 bars, oldest first, for the chart and the indicators. */
   async history(limit = 200): Promise<Candle[]> {
     const symbol = encodeURIComponent(this.credentials.symbol);

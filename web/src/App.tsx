@@ -5,6 +5,7 @@ import { Shell, SCREENS, type ScreenId } from './components/Shell';
 import { BotControlCenter } from './screens/BotControlCenter';
 import { ConnectBroker } from './screens/ConnectBroker';
 import { Dashboard } from './screens/Dashboard';
+import { News } from './screens/News';
 import { SignIn } from './screens/SignIn';
 import { TradeSettings } from './screens/TradeSettings';
 
@@ -49,6 +50,7 @@ export function App() {
     <Shell screen={screen} onNavigate={navigate} session={session}>
       {screen === 'dashboard' && <Dashboard />}
       {screen === 'bot' && <BotControlCenter />}
+      {screen === 'news' && <News />}
       {screen === 'settings' && <TradeSettings />}
       {screen === 'brokers' && <ConnectBroker />}
     </Shell>

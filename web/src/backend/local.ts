@@ -60,6 +60,7 @@ const ACCOUNT_POLL_MS = 15_000;
 export function createLocalBackend(): TerminalBackend {
   let runtime: Runtime | null = null;
   let session: SessionState = LOCKED;
+  let client: MetaApiClient | null = null;
   let quoteTimer: number | undefined;
   let accountTimer: number | undefined;
 
@@ -124,6 +125,7 @@ export function createLocalBackend(): TerminalBackend {
     accountTimer = undefined;
     runtime?.stop();
     runtime = null;
+    client = null;
   };
 
   const requireRuntime = (): Runtime => {
@@ -193,6 +195,7 @@ export function createLocalBackend(): TerminalBackend {
       });
       attach(rt);
       runtime = rt;
+      client = api;
 
       rt.bot.updateConfig({ symbol: credentials.symbol });
 
@@ -323,6 +326,9 @@ export function createLocalBackend(): TerminalBackend {
     startDemo,
     signOut,
     savedCredentials: () => loadCredentials(),
+
+    // Only a live broker session has history to measure; demo mode has none.
+    historyAround: async (from, to) => (client ? client.historyRange(from, to) : []),
 
     /* ---------------------------- commands ---------------------------- */
 

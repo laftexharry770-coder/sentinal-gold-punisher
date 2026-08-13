@@ -31,6 +31,7 @@ export const api: TerminalBackend = {
   startDemo: () => backend.startDemo(),
   signOut: () => backend.signOut(),
   savedCredentials: () => backend.savedCredentials(),
+  historyAround: (from, to) => backend.historyAround(from, to),
   addAccount: (payload) => backend.addAccount(payload),
   updateAccount: (id, patch) => backend.updateAccount(id, patch),
   removeAccount: (id) => backend.removeAccount(id),

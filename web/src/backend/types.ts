@@ -2,6 +2,7 @@ import type {
   AccountState,
   BotConfig,
   BotStats,
+  Candle,
   ClosedTrade,
   CopySettings,
   Position,
@@ -62,6 +63,9 @@ export interface TerminalBackend {
   startDemo(): Promise<void>;
   signOut(): Promise<void>;
   savedCredentials(): BrokerCredentials | null;
+
+  /** Bars across a past window, for measuring reactions to news releases. */
+  historyAround(from: number, to: number): Promise<Candle[]>;
 
   addAccount(payload: NewAccountPayload): Promise<AccountState>;
   updateAccount(
