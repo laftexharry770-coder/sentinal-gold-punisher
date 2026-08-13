@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from './api';
 import type { SessionState } from './backend/session';
-import { DIGIT_SCREENS, Shell, SCREENS, type ScreenId } from './components/Shell';
+import { Shell, SCREENS, type ScreenId } from './components/Shell';
 import { BotControlCenter } from './screens/BotControlCenter';
 import { ConnectBroker } from './screens/ConnectBroker';
 import { Dashboard } from './screens/Dashboard';
-import { DigitsDesk } from './screens/DigitsDesk';
 import { SignIn } from './screens/SignIn';
 import { TradeSettings } from './screens/TradeSettings';
 
-const SCREEN_IDS = [...SCREENS, ...DIGIT_SCREENS].map((screen) => screen.id);
+const SCREEN_IDS = SCREENS.map((screen) => screen.id);
 
 function isScreenId(value: string | null): value is ScreenId {
   return value !== null && (SCREEN_IDS as string[]).includes(value);
@@ -46,19 +45,12 @@ export function App() {
     return <SignIn session={session} />;
   }
 
-  // A digits session opens on its own desk, and a screen belonging to the
-  // other mode is not reachable from it.
-  const mode = session.status === 'live' ? session.mode : 'gold';
-  const allowed = (mode === 'digits' ? DIGIT_SCREENS : SCREENS).map((item) => item.id);
-  const current = allowed.includes(screen) ? screen : (allowed[0] ?? 'dashboard');
-
   return (
-    <Shell screen={current} onNavigate={navigate} session={session}>
-      {current === 'digits' && <DigitsDesk />}
-      {current === 'dashboard' && <Dashboard />}
-      {current === 'bot' && <BotControlCenter />}
-      {current === 'settings' && <TradeSettings />}
-      {current === 'brokers' && <ConnectBroker />}
+    <Shell screen={screen} onNavigate={navigate} session={session}>
+      {screen === 'dashboard' && <Dashboard />}
+      {screen === 'bot' && <BotControlCenter />}
+      {screen === 'settings' && <TradeSettings />}
+      {screen === 'brokers' && <ConnectBroker />}
     </Shell>
   );
 }

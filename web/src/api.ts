@@ -1,6 +1,6 @@
 import { createLocalBackend } from './backend/local';
 import { createRemoteBackend } from './backend/remote';
-import type { DigitOrder, TerminalBackend } from './backend/types';
+import type { TerminalBackend } from './backend/types';
 
 export type { NewAccountPayload, OrderPayload, TerminalBackend } from './backend/types';
 
@@ -34,11 +34,6 @@ export const api: TerminalBackend = {
   mt5Accounts: () => backend.mt5Accounts(),
   verifyMt5: (login: string, password: string, kind: 'main' | 'investor') =>
     backend.verifyMt5(login, password, kind),
-  digitSymbols: () => backend.digitSymbols(),
-  streamDigits: (symbol: string, handler: (quote: number, epoch: number) => void) =>
-    backend.streamDigits(symbol, handler),
-  digitProposal: (input: DigitOrder) => backend.digitProposal(input),
-  buyDigit: (input: DigitOrder) => backend.buyDigit(input),
   addAccount: (payload) => backend.addAccount(payload),
   updateAccount: (id, patch) => backend.updateAccount(id, patch),
   removeAccount: (id) => backend.removeAccount(id),

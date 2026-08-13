@@ -187,6 +187,11 @@ the same pass.
   screen says so. Trading an MT5 account needs a bridge that speaks the MetaTrader
   protocol; live orders from this terminal go to the Deriv account that signed in.
 
+  Digit contracts on the synthetic indices live in their own repository,
+  [Sentinal-Deriv-Bot](https://github.com/laftexharry770-coder/Sentinal-Deriv-Bot). The two
+  markets share a broker and nothing else — different instruments, different contracts,
+  different maths — so neither terminal carries the other's furniture.
+
   Account ids name their own kind — `DOT…` is demo, `ROT…` is real, and the older accounts
   use `VRTC…` and `CR…`. The sign-in screen says which kind it is reading, and the
   live-trading warning names the account, so arming the bot on real money is never a

@@ -6,7 +6,6 @@ import {
   isDemoAccountId,
   isValidAppId,
   tokenShapeWarning,
-  type TradingMode,
 } from '../broker/derivClient';
 import { TextField, Toggle } from '../components/ui';
 import type { SessionState } from '../backend/session';
@@ -23,7 +22,6 @@ export function SignIn({ session }: { session: SessionState }) {
   const [token, setToken] = useState(saved?.token ?? '');
   const [appId, setAppId] = useState(saved?.appId ?? DEFAULT_APP_ID);
   const [accountId, setAccountId] = useState(saved?.accountId ?? '');
-  const [mode, setMode] = useState<TradingMode>(saved?.mode ?? 'gold');
   const [symbol, setSymbol] = useState(saved?.symbol ?? DEFAULT_SYMBOL);
   const [multiplier, setMultiplier] = useState(saved?.multiplier ?? 100);
   const [remember, setRemember] = useState(Boolean(saved));
@@ -73,7 +71,7 @@ export function SignIn({ session }: { session: SessionState }) {
     setBusy('connect');
     setError(null);
     try {
-      await api.connectBroker({ token, appId, accountId, mode, symbol, multiplier, remember, liveExecution });
+      await api.connectBroker({ token, appId, accountId, symbol, multiplier, remember, liveExecution });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not connect.');
     } finally {
@@ -122,46 +120,6 @@ export function SignIn({ session }: { session: SessionState }) {
           the Deriv account you want to trade.
         </p>
 
-        {/*
-          The two markets are different instruments with different contracts,
-          so the choice is made before signing in and the terminal opens on one
-          of them. Nothing from the other is on screen afterwards.
-        */}
-        <div className="mt-4">
-          <label className="label">What are you trading?</label>
-          <div className="grid grid-cols-2 gap-2">
-            {(
-              [
-                { id: 'gold', name: 'Gold', detail: 'XAUUSD · multipliers' },
-                { id: 'digits', name: 'Volatility digits', detail: 'synthetics · tick contracts' },
-              ] as const
-            ).map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                aria-pressed={mode === option.id}
-                onClick={() => setMode(option.id)}
-                className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                  mode === option.id
-                    ? 'border-[var(--color-brass)]/60 bg-[var(--color-brass)]/12'
-                    : 'border-[var(--color-line)] bg-[var(--color-surface-2)] hover:border-[#39404a]'
-                }`}
-              >
-                <span
-                  className={`block text-sm font-semibold ${
-                    mode === option.id ? 'text-[var(--color-brass-bright)]' : 'text-ink'
-                  }`}
-                >
-                  {option.name}
-                </span>
-                <span className="mt-0.5 block text-[0.6875rem] leading-snug text-[var(--color-ink-muted)]">
-                  {option.detail}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div className="mt-4 space-y-3">
           <TextField
             label="Deriv API token"
@@ -187,16 +145,13 @@ export function SignIn({ session }: { session: SessionState }) {
                   : 'The Deriv account to trade: DOT… is demo, ROT… is real. This is what tells Deriv which account the token opens.'
             }
           />
-          {mode === 'gold' && (
-            <TextField
-              label="Symbol"
-              value={symbol}
-              onChange={setSymbol}
-              placeholder={DEFAULT_SYMBOL}
-              hint="Deriv's name for spot gold. Leave as is unless your account lists it differently."
-            />
-          )}
-          {mode === 'gold' && (
+          <TextField
+            label="Symbol"
+            value={symbol}
+            onChange={setSymbol}
+            placeholder={DEFAULT_SYMBOL}
+            hint="Deriv's name for spot gold. Leave as is unless your account lists it differently."
+          />
           <div>
             <label className="label" htmlFor="deriv-multiplier">
               Multiplier
@@ -219,7 +174,6 @@ export function SignIn({ session }: { session: SessionState }) {
               nearest one it does offer is used.
             </p>
           </div>
-          )}
 
           <TextField
             label="App id"

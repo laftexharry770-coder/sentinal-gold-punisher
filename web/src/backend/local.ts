@@ -137,7 +137,6 @@ export function createLocalBackend(): TerminalBackend {
       token: input.token.trim(),
       appId: input.appId.trim(),
       accountId: input.accountId.trim(),
-      mode: input.mode,
       symbol: input.symbol.trim() || DEFAULT_SYMBOL,
       multiplier: input.multiplier,
     };
@@ -292,7 +291,6 @@ export function createLocalBackend(): TerminalBackend {
           currency: info.currency,
         },
         execution: input.liveExecution && terms ? 'broker' : 'local',
-        mode: credentials.mode,
       });
     } catch (err) {
       teardown();
@@ -355,20 +353,6 @@ export function createLocalBackend(): TerminalBackend {
     // Empty without a session, and empty when Deriv will not answer — the
     // terminal is fully usable either way.
     mt5Accounts: async () => (client ? client.mt5Accounts().catch(() => []) : []),
-
-    digitSymbols: async () => (client ? client.digitSymbols() : []),
-    streamDigits: async (symbol, handler) => {
-      if (!client) throw new Error('Connect your Deriv account first.');
-      return client.streamSymbol(symbol, handler);
-    },
-    digitProposal: async (input) => {
-      if (!client) throw new Error('Connect your Deriv account first.');
-      return client.digitProposal(input);
-    },
-    buyDigit: async (input) => {
-      if (!client) throw new Error('Connect your Deriv account first.');
-      return client.buyDigit(input);
-    },
 
     verifyMt5: async (login, password, kind) => {
       if (!client) throw new Error('Connect your Deriv account first — MT5 is checked through it.');

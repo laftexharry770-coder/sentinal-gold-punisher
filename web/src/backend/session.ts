@@ -1,4 +1,4 @@
-import type { DerivCredentials, TradingMode } from '../broker/derivClient';
+import type { DerivCredentials } from '../broker/derivClient';
 
 export interface BrokerIdentity {
   login: string;
@@ -12,7 +12,7 @@ export type SessionState =
   | { status: 'locked'; error: string | null }
   | { status: 'connecting'; error: null }
   /** Live broker data. `execution` says where orders actually go. */
-  | { status: 'live'; broker: BrokerIdentity; execution: 'broker' | 'local'; mode: TradingMode }
+  | { status: 'live'; broker: BrokerIdentity; execution: 'broker' | 'local' }
   /** Explicitly chosen simulation — labelled as such everywhere. */
   | { status: 'demo' };
 
