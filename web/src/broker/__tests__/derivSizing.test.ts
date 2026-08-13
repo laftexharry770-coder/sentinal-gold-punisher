@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { grossProfit, type SymbolSpec } from '@sentinal/shared';
-import { CONTRACT_SIZE, goldCandidates, stakeFor, volumeFor } from '../derivClient';
+import { CONTRACT_SIZE, goldCandidates, isValidAppId, stakeFor, volumeFor } from '../derivClient';
 
 /**
  * Deriv stakes money; the engine sizes lots. The two only agree if the
@@ -70,6 +70,22 @@ describe('Deriv stake conversion', () => {
     expect(stakeFor(0.1, 0, 100)).toBe(0);
     expect(stakeFor(0.1, 3300, 0)).toBe(0);
     expect(volumeFor(50, 0, 100)).toBe(0);
+  });
+});
+
+describe('app id validation', () => {
+  it('accepts the numbers Deriv issues', () => {
+    expect(isValidAppId('1089')).toBe(true);
+    expect(isValidAppId(' 36300 ')).toBe(true);
+  });
+
+  it('rejects an API token pasted into the app id box', () => {
+    // The mistake this guard exists for: both are opaque strings on one screen,
+    // and a bad app id fails the handshake exactly like a blocked network.
+    expect(isValidAppId('346nAVo5UnAYrR28llELJ')).toBe(false);
+    expect(isValidAppId('a1b2c3d4')).toBe(false);
+    expect(isValidAppId('108.9')).toBe(false);
+    expect(isValidAppId('')).toBe(false);
   });
 });
 

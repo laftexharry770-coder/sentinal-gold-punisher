@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api';
-import { DEFAULT_APP_ID, DEFAULT_SYMBOL } from '../broker/derivClient';
+import { DEFAULT_APP_ID, DEFAULT_SYMBOL, isValidAppId } from '../broker/derivClient';
 import { TextField, Toggle } from '../components/ui';
 import type { SessionState } from '../backend/session';
 
@@ -26,7 +26,16 @@ export function SignIn({ session }: { session: SessionState }) {
   const connecting = session.status === 'connecting' || busy === 'connect';
   const sessionError = session.status === 'locked' ? session.error : null;
   const shown = error ?? sessionError;
-  const ready = token.trim().length > 0;
+
+  // The app id and the token are both opaque strings on the same screen, and
+  // pasting the token here fails the handshake in a way that looks like a dead
+  // network. Catching it before the attempt is the difference between a clear
+  // answer and a hunt.
+  const appIdError =
+    appId.trim().length > 0 && !isValidAppId(appId)
+      ? 'An app id is a number. This looks like your API token — put it in the box above.'
+      : null;
+  const ready = token.trim().length > 0 && appIdError === null;
 
   const connect = async () => {
     setBusy('connect');
@@ -125,7 +134,9 @@ export function SignIn({ session }: { session: SessionState }) {
             value={appId}
             onChange={setAppId}
             placeholder={DEFAULT_APP_ID}
-            hint="Deriv's shared app id works. Register your own at api.deriv.com for higher rate limits."
+            inputMode="numeric"
+            error={appIdError}
+            hint={`A number, not your token — Deriv's shared id ${DEFAULT_APP_ID} works. Register your own at api.deriv.com for higher rate limits.`}
           />
           <Toggle
             label="Stay signed in on this device"

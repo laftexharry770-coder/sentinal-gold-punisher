@@ -190,6 +190,8 @@ export function TextField({
   onChange,
   placeholder,
   hint,
+  error,
+  inputMode,
   type = 'text',
 }: {
   label: string;
@@ -197,9 +199,13 @@ export function TextField({
   onChange: (value: string) => void;
   placeholder?: string;
   hint?: string;
+  /** Shown in place of the hint, and marks the field invalid to assistive tech. */
+  error?: string | null;
+  inputMode?: 'text' | 'numeric';
   type?: string;
 }) {
   const id = useId();
+  const noteId = `${id}-note`;
   return (
     <div>
       <label className="label" htmlFor={id}>
@@ -208,12 +214,22 @@ export function TextField({
       <input
         id={id}
         type={type}
-        className="field"
+        inputMode={inputMode}
+        className={`field${error ? ' border-loss/60' : ''}`}
         value={value}
         placeholder={placeholder}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error || hint ? noteId : undefined}
         onChange={(e) => onChange(e.target.value)}
       />
-      {hint && <p className="mt-1 text-[0.6875rem] leading-snug text-[var(--color-ink-muted)]">{hint}</p>}
+      {(error || hint) && (
+        <p
+          id={noteId}
+          className={`mt-1 text-[0.6875rem] leading-snug ${error ? 'text-loss' : 'text-[var(--color-ink-muted)]'}`}
+        >
+          {error ?? hint}
+        </p>
+      )}
     </div>
   );
 }

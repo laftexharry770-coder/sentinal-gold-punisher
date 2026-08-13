@@ -26,6 +26,17 @@ export const DEFAULT_APP_ID = '1089';
  */
 export const DERIV_HOSTS = ['ws.derivws.com', 'ws.binaryws.com', 'blue.derivws.com', 'green.derivws.com'];
 
+/**
+ * An app id is a small integer Deriv issues to an application. It travels in
+ * the connection URL, so getting it wrong makes Deriv refuse the handshake —
+ * which looks exactly like a blocked network unless it is checked first. An
+ * API token in this box is the easy mistake, since both are opaque strings on
+ * the same screen.
+ */
+export function isValidAppId(appId: string): boolean {
+  return /^[0-9]+$/.test(appId.trim());
+}
+
 /** The symbol Deriv uses for spot gold. */
 export const DEFAULT_SYMBOL = 'frxXAUUSD';
 
@@ -223,6 +234,17 @@ export class DerivClient {
     this.onDrop = onDrop ?? null;
     const appId = this.credentials.appId.trim() || DEFAULT_APP_ID;
 
+    // Checked before dialling: an app id Deriv cannot parse fails the handshake
+    // on every host, which is indistinguishable from a blocked network once the
+    // attempts have already been made.
+    if (!isValidAppId(appId)) {
+      throw new BrokerError(
+        `"${appId}" is not an app id. An app id is a number, like ${DEFAULT_APP_ID} — if you pasted your API ` +
+          'token here, it belongs in the Deriv API token box instead. Clear this field to use Deriv\'s shared id.',
+        'InvalidAppId',
+      );
+    }
+
     // Deriv answers on several hostnames. Trying them in turn means one
     // blocked or unhealthy endpoint does not look like an outage.
     const attempts: string[] = [];
@@ -240,11 +262,12 @@ export class DerivClient {
       const rejected = attempts.some((line) => line.includes('before it opened'));
       throw new BrokerError(
         rejected
-          ? `Deriv accepted the connection and then dropped it. That usually means the app id is not valid — ` +
-            `clear it to use Deriv's shared id. (${attempts.join(' ')})`
-          : `No Deriv endpoint could be reached from this browser. The token was never sent, so this is the ` +
-            `network rather than your credentials: some mobile networks, ISPs and countries block Deriv. Try a ` +
-            `different network, and check whether deriv.com itself loads here. (${attempts.join(' ')})`,
+          ? `Deriv accepted the connection and then dropped it, which points at app id ${appId} rather than at ` +
+            `your token. Clear the field to use Deriv's shared id. (${attempts.join(' ')})`
+          : `No Deriv endpoint could be reached from this browser. App id ${appId} is well formed and your token ` +
+            `was never sent, so this is the network rather than your credentials: some mobile networks, ISPs and ` +
+            `countries block Deriv. Try a different network, and check whether deriv.com itself loads here. ` +
+            `(${attempts.join(' ')})`,
         'NetworkError',
       );
     }
