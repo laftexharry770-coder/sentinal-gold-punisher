@@ -19,6 +19,13 @@ import type { Candle, Tick } from '@sentinal/shared';
 /** Deriv's public app id. Register your own at api.deriv.com to raise limits. */
 export const DEFAULT_APP_ID = '1089';
 
+/**
+ * Deriv answers on several WebSocket hostnames that front the same API.
+ * They are tried in order, so one blocked or unhealthy endpoint does not
+ * present itself as Deriv being down.
+ */
+export const DERIV_HOSTS = ['ws.derivws.com', 'ws.binaryws.com', 'blue.derivws.com', 'green.derivws.com'];
+
 /** The symbol Deriv uses for spot gold. */
 export const DEFAULT_SYMBOL = 'frxXAUUSD';
 
@@ -161,38 +168,93 @@ export class DerivClient {
   /* Transport                                                           */
   /* ------------------------------------------------------------------ */
 
-  /** Opens the socket and authorises it. Rejects if either step fails. */
-  async open(onDrop?: (reason: string) => void): Promise<DerivAccountInfo> {
-    this.onDrop = onDrop ?? null;
-    const appId = this.credentials.appId.trim() || DEFAULT_APP_ID;
-    const url = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN&brand=deriv`;
+  /**
+   * Dials one Deriv endpoint.
+   *
+   * Resolves with an open socket, or rejects saying which way it failed —
+   * a handshake that never completes and a connection Deriv accepts and then
+   * drops have different causes, and the operator needs to be told which
+   * happened rather than "could not connect".
+   */
+  private dial(host: string, appId: string): Promise<WebSocket> {
+    const url = `wss://${host}/websockets/v3?app_id=${encodeURIComponent(appId)}&l=EN&brand=deriv`;
 
-    await new Promise<void>((resolve, reject) => {
+    return new Promise<WebSocket>((resolve, reject) => {
       let socket: WebSocket;
       try {
         socket = new WebSocket(url);
       } catch (err) {
-        reject(new BrokerError(`Could not open a socket to Deriv (${err instanceof Error ? err.message : 'error'}).`));
+        reject(new BrokerError(`${host} could not be dialled (${err instanceof Error ? err.message : 'error'}).`, 'NetworkError'));
         return;
       }
-      this.socket = socket;
 
-      socket.onopen = () => resolve();
-      socket.onerror = () =>
-        reject(
-          new BrokerError(
-            'Could not reach Deriv. Check your connection, and check the app id if you registered your own.',
-            'NetworkError',
-          ),
-        );
-      socket.onclose = (event) => {
-        // A close before open() resolves is a failure; afterwards it is a drop.
-        reject(new BrokerError(`Deriv closed the connection (${event.code}).`, 'Disconnected'));
-        this.failPending('The Deriv connection dropped.');
-        if (!this.closedByUs) this.onDrop?.('The Deriv connection dropped.');
+      let settled = false;
+      const finish = (fn: () => void): void => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        socket.onopen = null;
+        socket.onerror = null;
+        socket.onclose = null;
+        fn();
       };
-      socket.onmessage = (event) => this.receive(event.data);
+
+      const timer = window.setTimeout(
+        () =>
+          finish(() => {
+            socket.close();
+            reject(new BrokerError(`${host} did not answer.`, 'Timeout'));
+          }),
+        10_000,
+      );
+
+      socket.onopen = () => finish(() => resolve(socket));
+      socket.onerror = () =>
+        finish(() => reject(new BrokerError(`${host} refused the connection.`, 'NetworkError')));
+      socket.onclose = (event) =>
+        finish(() =>
+          reject(new BrokerError(`${host} closed the connection before it opened (${event.code}).`, 'Rejected')),
+        );
     });
+  }
+
+  /** Opens the socket and authorises it. Rejects if either step fails. */
+  async open(onDrop?: (reason: string) => void): Promise<DerivAccountInfo> {
+    this.onDrop = onDrop ?? null;
+    const appId = this.credentials.appId.trim() || DEFAULT_APP_ID;
+
+    // Deriv answers on several hostnames. Trying them in turn means one
+    // blocked or unhealthy endpoint does not look like an outage.
+    const attempts: string[] = [];
+    let socket: WebSocket | null = null;
+    for (const host of DERIV_HOSTS) {
+      try {
+        socket = await this.dial(host, appId);
+        break;
+      } catch (err) {
+        attempts.push(err instanceof Error ? err.message : `${host} failed.`);
+      }
+    }
+
+    if (!socket) {
+      const rejected = attempts.some((line) => line.includes('before it opened'));
+      throw new BrokerError(
+        rejected
+          ? `Deriv accepted the connection and then dropped it. That usually means the app id is not valid — ` +
+            `clear it to use Deriv's shared id. (${attempts.join(' ')})`
+          : `No Deriv endpoint could be reached from this browser. The token was never sent, so this is the ` +
+            `network rather than your credentials: some mobile networks, ISPs and countries block Deriv. Try a ` +
+            `different network, and check whether deriv.com itself loads here. (${attempts.join(' ')})`,
+        'NetworkError',
+      );
+    }
+
+    this.socket = socket;
+    socket.onmessage = (event) => this.receive(event.data);
+    socket.onclose = () => {
+      this.failPending('The Deriv connection dropped.');
+      if (!this.closedByUs) this.onDrop?.('The Deriv connection dropped.');
+    };
 
     return this.authorize();
   }
