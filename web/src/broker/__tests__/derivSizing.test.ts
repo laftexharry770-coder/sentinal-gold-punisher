@@ -81,17 +81,18 @@ describe('Deriv stake conversion', () => {
 });
 
 describe('app id validation', () => {
-  it('accepts the numbers Deriv issues', () => {
+  it('accepts both shapes Deriv issues', () => {
     expect(isValidAppId('1089')).toBe(true);
     expect(isValidAppId(' 36300 ')).toBe(true);
+    // developers.deriv.com issues alphanumeric app ids. An earlier numeric-only
+    // rule here rejected a real registration, so this pins the correction.
+    expect(isValidAppId('346nAVo5UnAYrR28llELJ')).toBe(true);
   });
 
-  it('rejects an API token pasted into the app id box', () => {
-    // The mistake this guard exists for: both are opaque strings on one screen,
-    // and a bad app id fails the handshake exactly like a blocked network.
-    expect(isValidAppId('346nAVo5UnAYrR28llELJ')).toBe(false);
-    expect(isValidAppId('a1b2c3d4')).toBe(false);
+  it('rejects only what cannot survive a URL', () => {
+    expect(isValidAppId('app id')).toBe(false);
     expect(isValidAppId('108.9')).toBe(false);
+    expect(isValidAppId('a/b')).toBe(false);
     expect(isValidAppId('')).toBe(false);
   });
 });
@@ -113,18 +114,12 @@ describe('token shape', () => {
     expect(tokenShapeWarning('"abc123"')).toMatch(/punctuation/);
   });
 
-  it('catches a masked field that has been pasted into repeatedly', () => {
-    // The real case: 68 unbroken characters reached Deriv, because a password
-    // field on a phone shows nothing of what it already holds.
-    const piled = 'a1b2c3d4e5f6g7h'.repeat(4) + 'abcdefgh';
-    expect(piled).toHaveLength(68);
-    expect(tokenShapeWarning(piled)).toMatch(/68 characters/);
-    expect(tokenShapeWarning(piled)).toMatch(/Press Clear/);
-  });
-
-  it('leaves a plausible token alone even at an unfamiliar length', () => {
+  it('judges no length, because Deriv issues more than one', () => {
+    // A length rule here rejected a real token once already. The field prints
+    // its character count instead, and Deriv decides.
     expect(tokenShapeWarning('a1b2c3d4e5f6g7h')).toBeNull();
-    expect(tokenShapeWarning('a'.repeat(40))).toBeNull();
+    expect(tokenShapeWarning('a'.repeat(68))).toBeNull();
+    expect(tokenShapeWarning('a'.repeat(120))).toBeNull();
   });
 });
 

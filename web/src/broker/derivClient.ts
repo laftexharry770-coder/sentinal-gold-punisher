@@ -27,14 +27,15 @@ export const DEFAULT_APP_ID = '1089';
 export const DERIV_HOSTS = ['ws.derivws.com', 'ws.binaryws.com', 'blue.derivws.com', 'green.derivws.com'];
 
 /**
- * An app id is a small integer Deriv issues to an application. It travels in
- * the connection URL, so getting it wrong makes Deriv refuse the handshake —
- * which looks exactly like a blocked network unless it is checked first. An
- * API token in this box is the easy mistake, since both are opaque strings on
- * the same screen.
+ * An app id travels in the connection URL, so a malformed one makes Deriv
+ * refuse the handshake — which reads exactly like a blocked network.
+ *
+ * Only characters that cannot survive a URL are rejected. Deriv's shared ids
+ * are integers and its developer portal issues alphanumeric ones, so the shape
+ * is Deriv's business: a rule invented here would reject real app ids, and has.
  */
 export function isValidAppId(appId: string): boolean {
-  return /^[0-9]+$/.test(appId.trim());
+  return /^[A-Za-z0-9_-]+$/.test(appId.trim());
 }
 
 /** The symbol Deriv uses for spot gold. */
@@ -146,20 +147,14 @@ function describe(code: string, message: string): string {
 }
 
 /**
- * Length past which the field is holding more than one token.
- *
- * Deriv issues tokens of around 15 characters. The threshold sits well clear
- * of that so a change to their format cannot make this cry wolf, while still
- * catching the common case: pasting into a masked field that was never empty,
- * so attempt after attempt accumulates unseen.
- */
-const IMPLAUSIBLE_TOKEN_LENGTH = 40;
-
-/**
  * Flags a token that cannot be right before Deriv is asked.
  *
- * Narrow on purpose: faults that are evident from the text itself. It warns
- * rather than blocks, so a token this does not recognise can still be tried.
+ * Only faults evident from the text itself: a space, a line break, or
+ * punctuation means something other than the token was copied. Length is
+ * deliberately not judged — Deriv issues tokens of more than one size, and a
+ * length rule guessed here would reject a working one. The field prints its
+ * own character count instead, which is a fact rather than an opinion, and
+ * Deriv keeps the final say.
  */
 export function tokenShapeWarning(token: string): string | null {
   const trimmed = token.trim();
@@ -167,12 +162,6 @@ export function tokenShapeWarning(token: string): string | null {
   if (/\s/.test(trimmed)) return 'This token has a space or line break inside it — copy it again.';
   if (!/^[A-Za-z0-9_-]+$/.test(trimmed)) {
     return 'This token has punctuation in it, so something other than the token was copied.';
-  }
-  if (trimmed.length > IMPLAUSIBLE_TOKEN_LENGTH) {
-    return (
-      `That is ${trimmed.length} characters — far longer than a Deriv token, which is about 15. ` +
-      'Press Clear and paste once, rather than adding to what is already there.'
-    );
   }
   return null;
 }
@@ -217,6 +206,8 @@ export class DerivClient {
   private readonly subscriptionIds = new Set<string>();
   private closedByUs = false;
   private onDrop: ((reason: string) => void) | null = null;
+  private appIdUsed = DEFAULT_APP_ID;
+  private fellBackFrom: string | null = null;
 
   constructor(private readonly credentials: DerivCredentials) {}
 
@@ -279,52 +270,89 @@ export class DerivClient {
     this.onDrop = onDrop ?? null;
     const appId = this.credentials.appId.trim() || DEFAULT_APP_ID;
 
-    // Checked before dialling: an app id Deriv cannot parse fails the handshake
-    // on every host, which is indistinguishable from a blocked network once the
-    // attempts have already been made.
+    // Checked before dialling: characters that cannot survive a URL fail the
+    // handshake on every host, which is indistinguishable from a blocked
+    // network once the attempts have already been made.
     if (!isValidAppId(appId)) {
       throw new BrokerError(
-        `"${appId}" is not an app id. An app id is a number, like ${DEFAULT_APP_ID} — if you pasted your API ` +
-          'token here, it belongs in the Deriv API token box instead. Clear this field to use Deriv\'s shared id.',
+        `"${appId}" cannot be an app id — it has a space or punctuation in it. Copy it from your app on ` +
+          "developers.deriv.com, or clear the field to use Deriv's shared id.",
         'InvalidAppId',
       );
     }
 
-    // Deriv answers on several hostnames. Trying them in turn means one
-    // blocked or unhealthy endpoint does not look like an outage.
+    // Deriv answers on several hostnames, and not every app id is accepted on
+    // every one. Falling back to the shared id means a registration the API
+    // will not take is a note in the log rather than a locked door.
     const attempts: string[] = [];
-    let socket: WebSocket | null = null;
-    for (const host of DERIV_HOSTS) {
+    const candidates = appId === DEFAULT_APP_ID ? [appId] : [appId, DEFAULT_APP_ID];
+
+    for (const candidate of candidates) {
+      let socket: WebSocket | null = null;
+      for (const host of DERIV_HOSTS) {
+        try {
+          socket = await this.dial(host, candidate);
+          break;
+        } catch (err) {
+          attempts.push(`[${candidate}] ${err instanceof Error ? err.message : `${host} failed.`}`);
+        }
+      }
+      if (!socket) continue;
+
+      this.socket = socket;
+      this.appIdUsed = candidate;
+      // Recorded before authorising, so a rejected token can say which app id
+      // carried it — the message is composed inside that call.
+      this.fellBackFrom = candidate === appId ? null : appId;
+      socket.onmessage = (event) => this.receive(event.data);
+      // Until the account is authorised a close is this candidate failing, not
+      // a session dropping, so nothing is torn down on its behalf yet.
+      socket.onclose = () => this.failPending('Deriv closed the connection without answering.');
+
       try {
-        socket = await this.dial(host, appId);
-        break;
+        const info = await this.authorize();
+        // Only now is the session real enough for a close to mean a drop.
+        socket.onclose = () => {
+          this.failPending('The Deriv connection dropped.');
+          if (!this.closedByUs) this.onDrop?.('The Deriv connection dropped.');
+        };
+        return info;
       } catch (err) {
-        attempts.push(err instanceof Error ? err.message : `${host} failed.`);
+        // Deriv hanging up mid-authorise is how it refuses an app id it will
+        // not serve: the handshake succeeds, then the socket closes unanswered.
+        if (err instanceof BrokerError && err.code === 'Disconnected') {
+          attempts.push(`[${candidate}] Deriv closed the connection without answering — the app id was refused.`);
+          socket.onclose = null;
+          socket.close();
+          this.socket = null;
+          this.fellBackFrom = null;
+          continue;
+        }
+        throw err;
       }
     }
 
-    if (!socket) {
-      const rejected = attempts.some((line) => line.includes('before it opened'));
-      throw new BrokerError(
-        rejected
-          ? `Deriv accepted the connection and then dropped it, which points at app id ${appId} rather than at ` +
-            `your token. Clear the field to use Deriv's shared id. (${attempts.join(' ')})`
-          : `No Deriv endpoint could be reached from this browser. App id ${appId} is well formed and your token ` +
-            `was never sent, so this is the network rather than your credentials: some mobile networks, ISPs and ` +
-            `countries block Deriv. Try a different network, and check whether deriv.com itself loads here. ` +
-            `(${attempts.join(' ')})`,
-        'NetworkError',
-      );
-    }
+    const tried = candidates.length > 1 ? `app ids ${candidates.join(' and ')}` : `app id ${appId}`;
+    const refused = attempts.some((line) => line.includes('refused') || line.includes('before it opened'));
+    throw new BrokerError(
+      refused
+        ? `Deriv would not serve ${tried}. Check the app id against your app on developers.deriv.com. ` +
+          `(${attempts.join(' ')})`
+        : `No Deriv endpoint could be reached from this browser, with ${tried}. Your token was never sent, so ` +
+          `this is the network rather than your credentials: some mobile networks, ISPs and countries block ` +
+          `Deriv. Try a different network, and check whether deriv.com itself loads here. (${attempts.join(' ')})`,
+      'NetworkError',
+    );
+  }
 
-    this.socket = socket;
-    socket.onmessage = (event) => this.receive(event.data);
-    socket.onclose = () => {
-      this.failPending('The Deriv connection dropped.');
-      if (!this.closedByUs) this.onDrop?.('The Deriv connection dropped.');
-    };
+  /** The app id the open socket is actually using, after any fallback. */
+  get activeAppId(): string {
+    return this.appIdUsed;
+  }
 
-    return this.authorize();
+  /** Set when the configured app id was refused and the shared one took over. */
+  get refusedAppId(): string | null {
+    return this.fellBackFrom;
   }
 
   close(): void {
@@ -411,10 +439,14 @@ export class DerivClient {
       // Deriv cannot say whether a rejected token was mistyped or truncated,
       // but the length can, and it gives that away without printing a secret.
       if (err instanceof BrokerError && (err.code === 'InvalidToken' || err.code === 'AuthorizationRequired')) {
-        throw new BrokerError(
-          `${err.message} (${token.length} characters were sent, with app id ${this.credentials.appId.trim() || DEFAULT_APP_ID})`,
-          err.code,
-        );
+        // A token issued for one app is not valid under another, so which app
+        // id carried it matters as much as the token itself.
+        const note = this.fellBackFrom
+          ? `Deriv refused app id ${this.fellBackFrom}, so ${this.appIdUsed} carried the request — and a token ` +
+            'issued alongside your own app does not authorise under a different one. A token made under ' +
+            'Deriv → Settings → API token belongs to the account rather than to an app, and does.'
+          : `Sent with app id ${this.appIdUsed}.`;
+        throw new BrokerError(`${err.message} (${token.length} characters were sent. ${note})`, err.code);
       }
       throw err;
     }

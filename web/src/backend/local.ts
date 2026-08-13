@@ -216,6 +216,15 @@ export function createLocalBackend(): TerminalBackend {
 
       rt.bot.updateConfig({ symbol: credentials.symbol });
 
+      if (api.refusedAppId) {
+        rt.journal.write(
+          'warn',
+          null,
+          `Deriv refused app id ${api.refusedAppId}, so the shared id ${api.activeAppId} is carrying this session. ` +
+            'A token issued for your own app does not authorise under a different one.',
+        );
+      }
+
       // Real bars first, so the chart and the indicators open on Deriv history.
       const history = await api.history(240).catch(() => [] as Candle[]);
       if (history.length > 0) {

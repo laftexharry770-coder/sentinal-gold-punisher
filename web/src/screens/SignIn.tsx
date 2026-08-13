@@ -27,19 +27,19 @@ export function SignIn({ session }: { session: SessionState }) {
   const sessionError = session.status === 'locked' ? session.error : null;
   const shown = error ?? sessionError;
 
-  // The app id and the token are both opaque strings on the same screen, and
-  // pasting the token here fails the handshake in a way that looks like a dead
-  // network. Catching it before the attempt is the difference between a clear
-  // answer and a hunt.
+  // A malformed app id fails the handshake in a way that reads like a dead
+  // network, so it is caught here. Only characters that cannot survive a URL
+  // count as malformed: Deriv issues both integer and alphanumeric app ids, and
+  // a stricter rule here rejected a real one.
   const appIdError =
     appId.trim().length > 0 && !isValidAppId(appId)
-      ? 'An app id is a number. This looks like your API token — put it in the box above.'
+      ? 'An app id has no spaces or punctuation. Copy it from your app on developers.deriv.com.'
       : null;
   const ready = token.trim().length > 0 && appIdError === null;
 
-  // A warning rather than a block: it flags a copy that clearly went wrong,
-  // but an over-strict rule here would lock someone out of a working token, so
-  // Deriv still gets the final say.
+  // A warning rather than a block: it flags a copy that clearly went wrong.
+  // Nothing here judges length — Deriv issues tokens of more than one size, so
+  // the field reports its count and lets Deriv decide.
   const tokenWarning = tokenShapeWarning(token);
 
   const connect = async () => {
@@ -141,9 +141,9 @@ export function SignIn({ session }: { session: SessionState }) {
             value={appId}
             onChange={setAppId}
             placeholder={DEFAULT_APP_ID}
-            inputMode="numeric"
+            showCount
             error={appIdError}
-            hint={`A number, not your token — Deriv's shared id ${DEFAULT_APP_ID} works. Register your own at api.deriv.com for higher rate limits.`}
+            hint={`Your own app's id from developers.deriv.com, or leave Deriv's shared id ${DEFAULT_APP_ID}. If your app's id is refused, the shared one is tried next.`}
           />
           <Toggle
             label="Stay signed in on this device"
