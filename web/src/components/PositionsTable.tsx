@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { formatPrice, formatVolume, type AccountState, type Position } from '@sentinal/shared';
 import { Chip, EmptyState, Money } from './ui';
 
-const ORIGIN_TONE: Record<Position['origin'], 'cobalt' | 'gold' | 'neutral' | 'warn'> = {
-  bot: 'cobalt',
+const ORIGIN_TONE: Record<Position['origin'], 'accent' | 'gold' | 'neutral' | 'warn'> = {
+  bot: 'accent',
   recovery: 'gold',
   copy: 'neutral',
   manual: 'warn',

@@ -15,19 +15,19 @@ const MIN_BARS = 20;
 const MAX_BARS = 400;
 
 const COLORS = {
-  gridMinor: 'rgba(28, 41, 66, 0.42)',
-  gridMajor: 'rgba(35, 52, 82, 0.7)',
-  axis: '#6f83a3',
-  axisStrong: '#a6b6d1',
+  gridMinor: 'rgba(39, 44, 52, 0.5)',
+  gridMajor: 'rgba(52, 58, 68, 0.75)',
+  axis: '#71777f',
+  axisStrong: '#a9aeb7',
   up: '#22d3a5',
   down: '#ff5c7a',
   wickUp: 'rgba(34, 211, 165, 0.8)',
   wickDown: 'rgba(255, 92, 122, 0.8)',
-  price: '#3b82f6',
+  price: '#aab1bb',
   buy: '#22d3a5',
   sell: '#ff5c7a',
-  crosshair: 'rgba(166, 182, 209, 0.55)',
-  tagInk: '#f4f8ff',
+  crosshair: 'rgba(169, 174, 183, 0.55)',
+  tagInk: '#0b0d10',
 };
 
 /** What the pointer is over, in chart terms rather than pixels. */
@@ -363,7 +363,7 @@ export function CandleChart({ candles, quote, positions = [], height = 340, bars
         ctx.setLineDash([]);
 
         const tagH = 17;
-        ctx.fillStyle = '#22314e';
+        ctx.fillStyle = '#2e343d';
         ctx.fillRect(plotW + 2, cursor.y - tagH / 2, AXIS_WIDTH - 4, tagH);
         ctx.fillStyle = COLORS.tagInk;
         ctx.textAlign = 'center';
@@ -373,7 +373,7 @@ export function CandleChart({ candles, quote, positions = [], height = 340, bars
           const label = formatClock(cursor.candle.time);
           const w = ctx.measureText(label).width + 14;
           const x = Math.min(plotW - w, Math.max(0, cursor.x - w / 2));
-          ctx.fillStyle = '#22314e';
+          ctx.fillStyle = '#2e343d';
           ctx.fillRect(x, plotH + 2, w, TIME_HEIGHT - 4);
           ctx.fillStyle = COLORS.tagInk;
           ctx.fillText(label, x + w / 2, plotH + TIME_HEIGHT / 2);
@@ -471,7 +471,7 @@ export function CandleChart({ candles, quote, positions = [], height = 340, bars
 export function Sparkline({
   points,
   height = 64,
-  color = '#3b82f6',
+  color = '#9aa2ad',
 }: {
   points: number[];
   height?: number;

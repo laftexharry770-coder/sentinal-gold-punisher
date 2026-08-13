@@ -15,7 +15,7 @@ function uptime(from: number | null): string {
 }
 
 function RecoveryRow({ task }: { task: RecoveryTask }) {
-  const tone = task.status === 'armed' ? 'profit' : task.status === 'fired' ? 'cobalt' : task.status === 'cancelled' ? 'neutral' : 'warn';
+  const tone = task.status === 'armed' ? 'profit' : task.status === 'fired' ? 'accent' : task.status === 'cancelled' ? 'neutral' : 'warn';
   return (
     <li className="flex flex-col gap-1 border-t border-[var(--color-line)] px-4 py-2.5 text-xs first:border-t-0">
       <div className="flex items-center justify-between gap-2">
@@ -92,7 +92,7 @@ export function BotControlCenter() {
           <StatTile
             label="Bot legs"
             value={`${botLegs.length}/${config.maxConcurrentPositions}`}
-            tone="cobalt"
+            tone="accent"
             sub={`${config.maxPositionsPerDirection}/side · ${config.entriesPerSignal} per signal`}
           />
           <StatTile label="Signals" value={stats?.signalsEvaluated ?? 0} sub={stats?.lastSignal?.reason ?? '—'} />
@@ -133,7 +133,7 @@ export function BotControlCenter() {
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
-                    <Chip tone={account.role === 'master' ? 'cobalt' : account.role === 'slave' ? 'gold' : 'neutral'}>
+                    <Chip tone={account.role === 'master' ? 'accent' : account.role === 'slave' ? 'gold' : 'neutral'}>
                       {account.role}
                     </Chip>
                     <Chip tone={account.connected ? 'profit' : 'loss'}>{account.connected ? 'online' : 'offline'}</Chip>

@@ -53,7 +53,7 @@ function QuickTrade() {
     <Card
       title="Quick trade"
       subtitle="Multi-leg market execution"
-      actions={<Chip tone="cobalt">{legs} legs</Chip>}
+      actions={<Chip tone="accent">{legs} legs</Chip>}
       bodyClass="p-4 space-y-3"
     >
       <div>
@@ -125,7 +125,7 @@ export function Dashboard() {
         <StatTile
           label="Open legs"
           value={`${positions.length}`}
-          tone="cobalt"
+          tone="accent"
           sub={`cap ${config.maxConcurrentPositions} · ${config.entriesPerSignal}/signal`}
         />
         <StatTile
@@ -153,7 +153,7 @@ export function Dashboard() {
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-2 pb-1 pt-2 text-[0.6875rem] text-[var(--color-ink-muted)]">
             <span className="flex items-center gap-1.5">
-              <span className="h-0.5 w-4 bg-[var(--color-cobalt)]" /> live mid
+              <span className="h-0.5 w-4 bg-[var(--color-accent)]" /> live mid
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-0.5 w-4 bg-profit" /> long entries

@@ -201,6 +201,10 @@ function Mt5SignIn({ onVerified }: { onVerified: (login: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  // Deriv answering "unrecognised" means the call is absent from this session,
+  // not that the details were wrong. Retrying cannot help, so the form stops
+  // inviting it.
+  const [unavailable, setUnavailable] = useState(false);
 
   const submit = async () => {
     setBusy(true);
@@ -213,11 +217,33 @@ function Mt5SignIn({ onVerified }: { onVerified: (login: string) => void }) {
       setPassword('');
       onVerified(login.trim());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Deriv would not confirm those details.');
+      const message = err instanceof Error ? err.message : 'Deriv would not confirm those details.';
+      if (/unrecognised|unrecognized/i.test(message)) {
+        setUnavailable(true);
+        setPassword('');
+      }
+      setError(message);
     } finally {
       setBusy(false);
     }
   };
+
+  if (unavailable) {
+    return (
+      <Card title="Sign in to MetaTrader 5" subtitle="Not available on this session" bodyClass="p-4 space-y-2">
+        <p className="text-xs leading-relaxed text-[var(--color-ink-dim)]">
+          Deriv answered <span className="text-ink">“Unrecognised request”</span>, which means the session this
+          terminal holds does not carry MetaTrader calls at all. It is a trading connection: quotes, contracts
+          and balances. Account management, which is where checking an MT5 password lives, is not on it.
+        </p>
+        <p className="text-xs leading-relaxed text-[var(--color-ink-muted)]">
+          So there is nothing to retry, and nothing on this screen that would make it work. Your MT5 account
+          stays reachable in the Deriv app; the bot trades the Deriv account you signed in with, which is the
+          only account Deriv's API will take an order for.
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <Card title="Sign in to MetaTrader 5" subtitle="Verify the account with Deriv" bodyClass="p-4 space-y-3">
@@ -485,7 +511,7 @@ export function ConnectBroker() {
         />
 
         {form.role === 'slave' && (
-          <div className="space-y-3 rounded-xl border border-[var(--color-line)] bg-[#0a1220] p-3">
+          <div className="space-y-3 rounded-xl border border-[var(--color-line)] bg-[#0e1116] p-3">
             <div>
               <label className="label">Follow master</label>
               <select className="field" value={copyMasterId} onChange={(e) => setCopyMasterId(e.target.value)}>

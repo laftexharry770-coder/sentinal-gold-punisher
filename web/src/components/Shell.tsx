@@ -65,7 +65,7 @@ export const SCREENS: { id: ScreenId; label: string; short: string; icon: ReactN
 function Logo() {
   return (
     <div className="flex items-center gap-2.5">
-      <div className="relative grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-[var(--color-cobalt-bright)] to-[var(--color-cobalt-deep)] shadow-[0_10px_24px_-12px_rgba(59,130,246,0.95)]">
+      <div className="relative grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-[#767e8a] to-[var(--color-accent-deep)] shadow-[0_10px_24px_-12px_rgba(0,0,0,0.9)]">
         <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5">
           <path
             d="M12 2.8 4.8 5.6v6.1c0 4.3 2.9 8.3 7.2 9.5 4.3-1.2 7.2-5.2 7.2-9.5V5.6L12 2.8Z"
@@ -78,7 +78,7 @@ function Logo() {
       </div>
       <div className="leading-tight">
         <p className="text-sm font-extrabold tracking-tight text-ink">
-          SENTINAL <span className="text-[var(--color-cobalt-bright)]">MT5</span>
+          SENTINAL <span className="text-[var(--color-accent-bright)]">MT5</span>
         </p>
         <p className="text-[0.625rem] font-medium uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
           Gold Punisher
@@ -246,7 +246,7 @@ export function Shell({
               onClick={() => onNavigate(item.id)}
               className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
                 item.id === screen
-                  ? 'bg-cobalt/15 text-[var(--color-cobalt-bright)] shadow-[inset_0_0_0_1px_rgba(59,130,246,0.28)]'
+                  ? 'bg-accent/15 text-[var(--color-accent-bright)] shadow-[inset_0_0_0_1px_rgba(154,162,173,0.28)]'
                   : 'text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-2)] hover:text-ink'
               }`}
             >
@@ -325,7 +325,7 @@ export function Shell({
               key={item.id}
               onClick={() => onNavigate(item.id)}
               className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[0.625rem] font-semibold transition-colors ${
-                item.id === screen ? 'text-[var(--color-cobalt-bright)]' : 'text-[var(--color-ink-muted)]'
+                item.id === screen ? 'text-[var(--color-accent-bright)]' : 'text-[var(--color-ink-muted)]'
               }`}
             >
               {item.icon}

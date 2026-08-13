@@ -37,12 +37,12 @@ export function Chip({
   tone = 'neutral',
   children,
 }: {
-  tone?: 'neutral' | 'cobalt' | 'profit' | 'loss' | 'gold' | 'warn';
+  tone?: 'neutral' | 'accent' | 'profit' | 'loss' | 'gold' | 'warn';
   children: ReactNode;
 }) {
   const tones: Record<string, string> = {
     neutral: 'border-[var(--color-line)] bg-[var(--color-surface-2)] text-[var(--color-ink-dim)]',
-    cobalt: 'border-cobalt/40 bg-cobalt/12 text-[var(--color-cobalt-bright)]',
+    accent: 'border-accent/40 bg-accent/12 text-[var(--color-accent-bright)]',
     profit: 'border-profit/40 bg-profit/12 text-profit',
     loss: 'border-loss/40 bg-loss/12 text-loss',
     gold: 'border-gold/40 bg-gold/12 text-gold',
@@ -61,14 +61,14 @@ export function StatTile({
   label: string;
   value: ReactNode;
   sub?: ReactNode;
-  tone?: 'neutral' | 'profit' | 'loss' | 'cobalt' | 'gold';
+  tone?: 'neutral' | 'profit' | 'loss' | 'accent' | 'gold';
   icon?: ReactNode;
 }) {
   const colors: Record<string, string> = {
     neutral: 'text-ink',
     profit: 'text-profit',
     loss: 'text-loss',
-    cobalt: 'text-[var(--color-cobalt-bright)]',
+    accent: 'text-[var(--color-accent-bright)]',
     gold: 'text-gold',
   };
   return (
@@ -106,8 +106,8 @@ export function Toggle({
 }) {
   return (
     <label
-      className={`flex items-start justify-between gap-4 rounded-xl border border-[var(--color-line)] bg-[#0a1220] px-3.5 py-3 ${
-        disabled ? 'opacity-50' : 'cursor-pointer hover:border-[#294066]'
+      className={`flex items-start justify-between gap-4 rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 ${
+        disabled ? 'opacity-50' : 'cursor-pointer hover:border-[#39404a]'
       }`}
     >
       <span className="min-w-0">
@@ -122,7 +122,7 @@ export function Toggle({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors ${
-          checked ? 'border-cobalt bg-cobalt/80' : 'border-[var(--color-line)] bg-[#16233b]'
+          checked ? 'border-accent bg-accent/80' : 'border-[var(--color-line)] bg-[#20252c]'
         }`}
       >
         <span
@@ -295,7 +295,7 @@ export function Segmented<T extends string>({
   return (
     <div>
       {label && <span className="label">{label}</span>}
-      <div className="flex rounded-xl border border-[var(--color-line)] bg-[#0a1220] p-1">
+      <div className="flex rounded-xl border border-[var(--color-line)] bg-[#0e1116] p-1">
         {options.map((option) => (
           <button
             key={option.value}
@@ -303,7 +303,7 @@ export function Segmented<T extends string>({
             onClick={() => onChange(option.value)}
             className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors ${
               option.value === value
-                ? 'bg-cobalt text-white shadow-[0_8px_20px_-12px_rgba(59,130,246,0.9)]'
+                ? 'bg-accent text-white shadow-[0_8px_20px_-12px_rgba(0,0,0,0.85)]'
                 : 'text-[var(--color-ink-muted)] hover:text-ink'
             }`}
           >

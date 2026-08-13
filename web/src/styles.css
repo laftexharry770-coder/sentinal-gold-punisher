@@ -2,7 +2,7 @@
 @import './fonts-embedded.css';
 
 /* ------------------------------------------------------------------ */
-/* Cobalt Dark — Sentinal MT5 design system                            */
+/* Graphite Dark — Sentinal MT5 design system                          */
 /* ------------------------------------------------------------------ */
 
 @theme {
@@ -12,20 +12,25 @@
   --font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  --color-base: #070b14;
-  --color-surface: #0c1322;
-  --color-surface-2: #111b2e;
-  --color-surface-3: #16233b;
-  --color-line: #1c2942;
-  --color-line-soft: #16203466;
+  --color-base: #0b0d10;
+  --color-surface: #121519;
+  --color-surface-2: #181c22;
+  --color-surface-3: #21262e;
+  --color-line: #272c34;
+  --color-line-soft: #1e232a66;
 
-  --color-ink: #e6edf8;
-  --color-ink-dim: #a6b6d1;
-  --color-ink-muted: #6f83a3;
+  --color-ink: #e9ebee;
+  --color-ink-dim: #a9aeb7;
+  --color-ink-muted: #71777f;
 
-  --color-cobalt: #3b82f6;
-  --color-cobalt-bright: #60a5fa;
-  --color-cobalt-deep: #1d4ed8;
+  /*
+   * The accent is graphite rather than a hue. Colour is reserved for meaning
+   * here — green for profit, red for loss, gold for the instrument — so an
+   * accent that carries none stays out of their way.
+   */
+  --color-accent: #5c646f;
+  --color-accent-bright: #9aa2ad;
+  --color-accent-deep: #3c424b;
 
   --color-profit: #22d3a5;
   --color-loss: #ff5c7a;
@@ -52,9 +57,9 @@
 
   body {
     background:
-      radial-gradient(1200px 680px at 80% -14%, rgba(59, 130, 246, 0.15), transparent 64%),
-      radial-gradient(820px 560px at 4% 2%, rgba(29, 78, 216, 0.11), transparent 60%),
-      radial-gradient(900px 500px at 50% 112%, rgba(245, 185, 59, 0.05), transparent 66%),
+      radial-gradient(1200px 680px at 80% -14%, rgba(154, 162, 173, 0.09), transparent 64%),
+      radial-gradient(820px 560px at 4% 2%, rgba(120, 128, 140, 0.07), transparent 60%),
+      radial-gradient(900px 500px at 50% 112%, rgba(245, 185, 59, 0.045), transparent 66%),
       var(--color-base);
     background-attachment: fixed;
     color: var(--color-ink);
@@ -101,11 +106,11 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #22314e;
+    background: #2e343d;
     border-radius: 99px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #2e4570;
+    background: #3d444f;
   }
 
   input,
@@ -130,17 +135,17 @@
    */
   .card {
     position: relative;
-    background: linear-gradient(162deg, rgba(19, 30, 51, 0.95), rgba(11, 18, 32, 0.96));
+    background: linear-gradient(162deg, rgba(25, 29, 35, 0.95), rgba(16, 19, 23, 0.96));
     border: 1px solid var(--color-line);
     border-radius: var(--radius-card);
     box-shadow:
       inset 0 1px 0 0 rgba(255, 255, 255, 0.045),
-      0 1px 2px -1px rgba(2, 6, 20, 0.9),
-      0 22px 48px -32px rgba(2, 6, 20, 0.95);
+      0 1px 2px -1px rgba(0, 0, 0, 0.9),
+      0 22px 48px -32px rgba(0, 0, 0, 0.95);
   }
 
   .card-flush {
-    background: rgba(12, 19, 34, 0.7);
+    background: rgba(17, 20, 25, 0.7);
     border: 1px solid var(--color-line);
     border-radius: var(--radius-card);
     box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.028);
@@ -183,11 +188,11 @@
   .btn:focus-visible,
   .field:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px var(--color-base), 0 0 0 4px rgba(96, 165, 250, 0.65);
+    box-shadow: 0 0 0 2px var(--color-base), 0 0 0 4px rgba(154, 162, 173, 0.7);
   }
   .btn:hover:not(:disabled) {
     background: var(--color-surface-3);
-    border-color: #294066;
+    border-color: #39404a;
   }
   .btn:active:not(:disabled) {
     transform: translateY(1px);
@@ -198,16 +203,16 @@
   }
 
   .btn-primary {
-    background: linear-gradient(180deg, var(--color-cobalt), var(--color-cobalt-deep));
-    border-color: #2f6fe0;
-    color: #f4f8ff;
+    background: linear-gradient(180deg, #676f7b, var(--color-accent-deep));
+    border-color: #767e8a;
+    color: #f7f8fa;
     box-shadow:
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
-      0 10px 26px -14px rgba(59, 130, 246, 0.9);
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.16),
+      0 10px 26px -16px rgba(0, 0, 0, 0.95);
   }
   .btn-primary:hover:not(:disabled) {
-    background: linear-gradient(180deg, var(--color-cobalt-bright), var(--color-cobalt));
-    border-color: #578ff5;
+    background: linear-gradient(180deg, #767e8a, #4a515b);
+    border-color: #8b93a0;
   }
 
   .btn-buy {
@@ -226,7 +231,7 @@
 
   .field {
     width: 100%;
-    background: #09101c;
+    background: #0d1014;
     border: 1px solid var(--color-line);
     border-radius: 10px;
     padding: 0.55rem 0.7rem;
@@ -234,7 +239,7 @@
     font-size: 16px;
     color: var(--color-ink);
     outline: none;
-    box-shadow: inset 0 1px 2px 0 rgba(2, 6, 20, 0.55);
+    box-shadow: inset 0 1px 2px 0 rgba(0, 0, 0, 0.55);
     transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
   }
   @media (min-width: 640px) {
@@ -243,17 +248,17 @@
     }
   }
   .field:hover:not(:focus) {
-    border-color: #24365a;
+    border-color: #343b45;
   }
   .field:focus {
-    border-color: var(--color-cobalt);
-    background: #0a1322;
+    border-color: #7c848f;
+    background: #0f1318;
     box-shadow:
-      inset 0 1px 2px 0 rgba(2, 6, 20, 0.5),
-      0 0 0 3px rgba(59, 130, 246, 0.18);
+      inset 0 1px 2px 0 rgba(0, 0, 0, 0.5),
+      0 0 0 3px rgba(154, 162, 173, 0.18);
   }
   .field::placeholder {
-    color: #4d5f7d;
+    color: #575d66;
   }
 
   .label {
@@ -271,9 +276,9 @@
     position: relative;
     border-radius: 12px;
     background:
-      radial-gradient(120% 80% at 50% 0%, rgba(59, 130, 246, 0.06), transparent 70%),
-      #080e19;
-    box-shadow: inset 0 0 0 1px rgba(28, 41, 66, 0.9), inset 0 20px 40px -32px rgba(59, 130, 246, 0.5);
+      radial-gradient(120% 80% at 50% 0%, rgba(154, 162, 173, 0.05), transparent 70%),
+      #0a0c10;
+    box-shadow: inset 0 0 0 1px rgba(39, 44, 52, 0.9), inset 0 20px 40px -32px rgba(154, 162, 173, 0.35);
   }
 
   /*
@@ -298,8 +303,8 @@
 
   .grid-lines {
     background-image:
-      linear-gradient(rgba(28, 41, 66, 0.5) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(28, 41, 66, 0.5) 1px, transparent 1px);
+      linear-gradient(rgba(39, 44, 52, 0.5) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(39, 44, 52, 0.5) 1px, transparent 1px);
     background-size: 48px 40px;
   }
 }

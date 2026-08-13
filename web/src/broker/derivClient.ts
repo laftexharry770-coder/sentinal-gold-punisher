@@ -183,6 +183,10 @@ function describe(code: string, message: string): string {
       return `${said} Wait a moment and reconnect; registering your own app id at api.deriv.com raises the limit.`;
     case 'MarketIsClosed':
       return `${said} Gold is closed on Deriv right now.`;
+    case 'UnrecognisedRequest':
+      // The trading socket carries the calls trading needs and no more, so an
+      // unknown method is a missing feature rather than a malformed request.
+      return `${said} This Deriv session does not offer that call.`;
     default:
       return message ? `${said} (${code})` : `Deriv request failed (${code}).`;
   }

@@ -6,7 +6,7 @@ const LEVEL_STYLE: Record<LogLevel, { dot: string; text: string; label: string }
   success: { dot: 'bg-profit', text: 'text-profit', label: 'OK' },
   warn: { dot: 'bg-warn', text: 'text-warn', label: 'WARN' },
   error: { dot: 'bg-loss', text: 'text-loss', label: 'ERR' },
-  trade: { dot: 'bg-[var(--color-cobalt-bright)]', text: 'text-[var(--color-cobalt-bright)]', label: 'EXEC' },
+  trade: { dot: 'bg-[var(--color-accent-bright)]', text: 'text-[var(--color-accent-bright)]', label: 'EXEC' },
   copy: { dot: 'bg-gold', text: 'text-gold', label: 'COPY' },
 };
 

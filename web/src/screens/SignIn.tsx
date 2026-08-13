@@ -91,7 +91,7 @@ export function SignIn({ session }: { session: SessionState }) {
   return (
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col justify-center gap-5 px-5 py-10">
       <header className="flex items-center gap-3">
-        <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-[var(--color-cobalt-bright)] to-[var(--color-cobalt-deep)] shadow-[0_10px_24px_-12px_rgba(59,130,246,0.95)]">
+        <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-[#767e8a] to-[var(--color-accent-deep)] shadow-[0_10px_24px_-12px_rgba(0,0,0,0.9)]">
           <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6" aria-hidden="true">
             <path
               d="M12 2.8 4.8 5.6v6.1c0 4.3 2.9 8.3 7.2 9.5 4.3-1.2 7.2-5.2 7.2-9.5V5.6L12 2.8Z"
@@ -104,7 +104,7 @@ export function SignIn({ session }: { session: SessionState }) {
         </div>
         <div className="leading-tight">
           <h1 className="text-lg font-extrabold tracking-tight text-ink">
-            SENTINAL <span className="text-[var(--color-cobalt-bright)]">MT5</span>
+            SENTINAL <span className="text-[var(--color-accent-bright)]">MT5</span>
           </h1>
           <p className="text-[0.6875rem] font-medium uppercase tracking-[0.14em] text-[var(--color-ink-muted)]">
             Gold Punisher

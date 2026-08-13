@@ -14,14 +14,14 @@ function SizingPreview({ draft, equity }: { draft: Draft; equity: number }) {
 
   if (equity <= 0) {
     return (
-      <p className="rounded-xl border border-[var(--color-line)] bg-[#0a1220] px-3.5 py-3 text-xs text-[var(--color-ink-muted)]">
+      <p className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 text-xs text-[var(--color-ink-muted)]">
         Connect a broker to see the size these settings produce for your account.
       </p>
     );
   }
 
   return (
-    <div className="rounded-xl border border-[var(--color-line)] bg-[#0a1220] px-3.5 py-3 text-xs text-[var(--color-ink-dim)]">
+    <div className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 text-xs text-[var(--color-ink-dim)]">
       On {formatMoney(equity)} of equity each leg is{' '}
       <span className="tabular font-semibold text-ink">{sized.volume.toFixed(2)} lots</span>, risking{' '}
       <span className="tabular font-semibold text-loss">{formatMoney(sized.stopLossUsd)}</span> against{' '}
@@ -148,7 +148,7 @@ export function TradeSettings() {
       <Card
         title="Position sizing"
         subtitle="How big each leg is, and what it risks"
-        actions={<Chip tone={draft.sizing === 'risk-percent' ? 'cobalt' : 'neutral'}>
+        actions={<Chip tone={draft.sizing === 'risk-percent' ? 'accent' : 'neutral'}>
           {draft.sizing === 'risk-percent' ? 'Adaptive' : 'Fixed lot'}
         </Chip>}
         bodyClass="p-4 space-y-4"
@@ -237,7 +237,7 @@ export function TradeSettings() {
       <Card
         title="Multi-position execution"
         subtitle="How many trades the engine may run at the same time"
-        actions={<Chip tone="cobalt">{draft.entriesPerSignal} legs / signal</Chip>}
+        actions={<Chip tone="accent">{draft.entriesPerSignal} legs / signal</Chip>}
         bodyClass="p-4 space-y-4"
       >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -304,7 +304,7 @@ export function TradeSettings() {
           onChange={(v) => set('allowHedging', v)}
         />
 
-        <div className="rounded-xl border border-[var(--color-line)] bg-[#0a1220] px-3.5 py-3 text-xs text-[var(--color-ink-dim)]">
+        <div className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 text-xs text-[var(--color-ink-dim)]">
           At full book the engine holds{' '}
           <span className="tabular font-semibold text-ink">
             {(draft.maxConcurrentPositions * draft.lotSize).toFixed(2)} lots
