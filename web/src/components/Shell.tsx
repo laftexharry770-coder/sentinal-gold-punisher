@@ -5,7 +5,7 @@ import type { SessionState } from '../backend/session';
 import { onInstallAvailability, promptInstall } from '../pwa';
 import { useTerminal } from '../store';
 
-export type ScreenId = 'dashboard' | 'bot' | 'news' | 'settings' | 'brokers';
+export type ScreenId = 'dashboard' | 'bot' | 'settings' | 'brokers';
 
 export const SCREENS: { id: ScreenId; label: string; short: string; icon: ReactNode }[] = [
   {
@@ -26,17 +26,6 @@ export const SCREENS: { id: ScreenId; label: string; short: string; icon: ReactN
       <svg viewBox="0 0 20 20" fill="none" style={{ height: 18, width: 18 }}>
         <rect x="3.5" y="6.5" width="13" height="9.5" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
         <path d="M10 3.4v3.1M7.4 11h.01M12.6 11h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    id: 'news',
-    label: 'News & Calendar',
-    short: 'News',
-    icon: (
-      <svg viewBox="0 0 20 20" fill="none" style={{ height: 18, width: 18 }}>
-        <rect x="3" y="4.5" width="14" height="11" rx="2" stroke="currentColor" strokeWidth="1.6" />
-        <path d="M6 8h6M6 11h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
       </svg>
     ),
   },

@@ -16,7 +16,7 @@
     "build": "npm run build --workspace shared && npm run build --workspace engine && npm run build --workspace server && npm run build --workspace web",
     "start": "npm run start --workspace server",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspace engine"
+    "test": "npm run test --workspace engine && npm run test --workspace web"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

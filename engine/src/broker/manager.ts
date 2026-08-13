@@ -13,8 +13,8 @@ import { TradingAccount } from './account.js';
 
 /**
  * Builds an account for a provider the core does not implement itself.
- * The server registers the MetaApi adapter this way, which keeps the engine
- * free of transport code and lets it run unchanged in a browser.
+ * The browser build registers the Deriv adapter this way, which keeps the
+ * engine free of transport code and lets it run unchanged on a server.
  */
 export type AccountFactory = (config: AccountConfig) => TradingAccount;
 
@@ -29,7 +29,6 @@ export interface NewAccountInput {
   leverage?: number;
   role?: AccountConfig['role'];
   initialBalance?: number;
-  metaApiAccountId?: string;
   copy?: Partial<AccountConfig['copy']>;
 }
 
@@ -79,7 +78,6 @@ export class AccountManager extends Emitter {
       leverage: input.leverage ?? 500,
       role: input.role ?? 'standalone',
       initialBalance: input.initialBalance ?? 10_000,
-      metaApiAccountId: input.metaApiAccountId,
       copy: { ...DEFAULT_COPY_SETTINGS, ...input.copy },
     };
 

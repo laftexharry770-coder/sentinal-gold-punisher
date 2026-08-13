@@ -152,13 +152,12 @@ export function createRouter(runtime: Runtime): Router {
         name: typeof body.name === 'string' ? body.name.trim() : '',
         login: typeof body.login === 'string' ? body.login.trim() : '',
         server: typeof body.server === 'string' ? body.server.trim() : '',
-        provider: body.provider === 'metaapi' || body.provider === 'mt5' ? body.provider : 'sim',
+        provider: body.provider === 'deriv' ? body.provider : 'sim',
         role: body.role === 'master' || body.role === 'slave' ? body.role : 'standalone',
         broker: typeof body.broker === 'string' ? body.broker : undefined,
         currency: typeof body.currency === 'string' ? body.currency : undefined,
         leverage: asNumber(body.leverage),
         initialBalance: asNumber(body.initialBalance),
-        metaApiAccountId: typeof body.metaApiAccountId === 'string' ? body.metaApiAccountId : undefined,
         copy: body.copy && typeof body.copy === 'object' ? parseCopyPatch(body.copy as Record<string, unknown>) : undefined,
       });
       res.status(201).json(state);

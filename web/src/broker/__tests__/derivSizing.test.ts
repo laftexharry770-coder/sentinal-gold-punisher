@@ -1,0 +1,86 @@
+import { describe, expect, it } from 'vitest';
+import { grossProfit, type SymbolSpec } from '@sentinal/shared';
+import { CONTRACT_SIZE, goldCandidates, stakeFor, volumeFor } from '../derivClient';
+
+/**
+ * Deriv stakes money; the engine sizes lots. The two only agree if the
+ * conversion is exact, so these tests hold it to the one thing that matters:
+ * a lot on this terminal must earn what the same lot would earn on MetaTrader,
+ * and Deriv's own contract must pay exactly that.
+ */
+
+const SPEC: SymbolSpec = {
+  symbol: 'frxXAUUSD',
+  digits: 2,
+  tickSize: 0.01,
+  contractSize: CONTRACT_SIZE,
+  minLot: 0.01,
+  maxLot: 100,
+  lotStep: 0.01,
+  baseSpread: 0,
+  commissionPerLot: 0,
+};
+
+/** What Deriv actually pays a multiplier contract. */
+function derivProfit(stake: number, multiplier: number, entry: number, exit: number, long: boolean): number {
+  const move = long ? exit - entry : entry - exit;
+  return stake * multiplier * (move / entry);
+}
+
+describe('Deriv stake conversion', () => {
+  it('stakes what a lot is worth at the current price', () => {
+    // 0.01 lots of gold is 1 oz; at 3300 that is 3300 of exposure, which a
+    // 100x multiplier reaches with a 33 stake.
+    expect(stakeFor(0.01, 3300, 100)).toBe(33);
+    expect(stakeFor(0.1, 3300, 100)).toBe(330);
+    // A bigger multiplier reaches the same exposure with less money down.
+    expect(stakeFor(0.01, 3300, 200)).toBe(16.5);
+  });
+
+  it('round-trips a stake back to the lots it represents', () => {
+    for (const [volume, price, multiplier] of [
+      [0.01, 3300, 100],
+      [0.25, 2412.55, 40],
+      [1.5, 4100.9, 200],
+    ] as const) {
+      const stake = stakeFor(volume, price, multiplier);
+      expect(volumeFor(stake, price, multiplier)).toBeCloseTo(volume, 3);
+    }
+  });
+
+  it('pays the same money as the engine expects from the lot', () => {
+    const entry = 3300;
+    const multiplier = 100;
+
+    for (const [volume, exit, long] of [
+      [0.01, 3312, true],
+      [0.05, 3288.5, true],
+      [0.2, 3271.25, false],
+      [1, 3355.75, false],
+    ] as const) {
+      const stake = stakeFor(volume, entry, multiplier);
+      const engine = grossProfit(SPEC, long ? 'buy' : 'sell', volume, entry, exit);
+      const deriv = derivProfit(stake, multiplier, entry, exit, long);
+      // Stakes are quoted to the cent, so the two agree to within that rounding.
+      expect(deriv).toBeCloseTo(engine, 1);
+    }
+  });
+
+  it('refuses to invent a stake without a price or a multiplier', () => {
+    expect(stakeFor(0.1, 0, 100)).toBe(0);
+    expect(stakeFor(0.1, 3300, 0)).toBe(0);
+    expect(volumeFor(50, 0, 100)).toBe(0);
+  });
+});
+
+describe('gold symbol discovery', () => {
+  it('picks out the gold instruments Deriv lists', () => {
+    const candidates = goldCandidates([
+      { symbol: 'frxXAUUSD', displayName: 'Gold/USD', pip: 0.01, market: 'commodities', open: true },
+      { symbol: 'frxEURUSD', displayName: 'EUR/USD', pip: 0.00001, market: 'forex', open: true },
+      { symbol: 'frxXAGUSD', displayName: 'Silver/USD', pip: 0.001, market: 'commodities', open: true },
+      { symbol: 'R_100', displayName: 'Volatility 100 Index', pip: 0.01, market: 'synthetic', open: true },
+    ]);
+    expect(candidates).toEqual(['frxXAUUSD']);
+  });
+});

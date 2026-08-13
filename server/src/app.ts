@@ -1,12 +1,13 @@
 import { createRuntime, seedDemoAccounts, type Runtime } from '@sentinal/engine';
-import { MetaApiAccount } from './broker/metaapi.js';
 import { config } from './config.js';
 
 export type { Runtime } from '@sentinal/engine';
 
 /**
- * Server-side runtime: the shared engine plus the transport-bound providers
- * that only make sense in Node (MetaApi cloud routing).
+ * Server-side runtime: the shared engine on a simulated feed.
+ *
+ * Live Deriv routing lives in the browser build, where the operator's own API
+ * token never has to leave their machine.
  */
 export function createServerRuntime(): Runtime {
   const runtime = createRuntime({
@@ -17,7 +18,6 @@ export function createServerRuntime(): Runtime {
     banner: 'Sentinal MT5 execution server online — XAUUSD feed live',
   });
 
-  runtime.accounts.registerProvider('metaapi', (cfg) => new MetaApiAccount(cfg));
   seedDemoAccounts(runtime);
   return runtime;
 }

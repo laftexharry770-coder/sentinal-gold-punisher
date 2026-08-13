@@ -1,19 +1,22 @@
 import { useState } from 'react';
 import { api } from '../api';
-import { METAAPI_REGIONS, type MetaApiRegion } from '../broker/metaapiClient';
+import { DEFAULT_APP_ID, DEFAULT_SYMBOL } from '../broker/derivClient';
 import { TextField, Toggle } from '../components/ui';
 import type { SessionState } from '../backend/session';
 
+/** Deriv's usual multiplier ladder for gold; the account's own list wins on connect. */
+const MULTIPLIERS = [20, 40, 60, 100, 150, 200];
+
 /**
- * The terminal's gate. Until a broker session exists the app shows no prices,
+ * The terminal's gate. Until a Deriv session exists the app shows no prices,
  * no chart and no accounts — only this screen.
  */
 export function SignIn({ session }: { session: SessionState }) {
   const saved = api.savedCredentials();
   const [token, setToken] = useState(saved?.token ?? '');
-  const [accountId, setAccountId] = useState(saved?.accountId ?? '');
-  const [region, setRegion] = useState<MetaApiRegion>(saved?.region ?? 'new-york');
-  const [symbol, setSymbol] = useState(saved?.symbol ?? 'XAUUSD');
+  const [appId, setAppId] = useState(saved?.appId ?? DEFAULT_APP_ID);
+  const [symbol, setSymbol] = useState(saved?.symbol ?? DEFAULT_SYMBOL);
+  const [multiplier, setMultiplier] = useState(saved?.multiplier ?? 100);
   const [remember, setRemember] = useState(Boolean(saved));
   // Live routing is never on unless the operator turns it on, every session.
   const [liveExecution, setLiveExecution] = useState(false);
@@ -23,13 +26,13 @@ export function SignIn({ session }: { session: SessionState }) {
   const connecting = session.status === 'connecting' || busy === 'connect';
   const sessionError = session.status === 'locked' ? session.error : null;
   const shown = error ?? sessionError;
-  const ready = token.trim().length > 0 && accountId.trim().length > 0;
+  const ready = token.trim().length > 0;
 
   const connect = async () => {
     setBusy('connect');
     setError(null);
     try {
-      await api.connectBroker({ token, accountId, region, symbol, remember, liveExecution });
+      await api.connectBroker({ token, appId, symbol, multiplier, remember, liveExecution });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not connect.');
     } finally {
@@ -71,42 +74,59 @@ export function SignIn({ session }: { session: SessionState }) {
       </header>
 
       <section className="card p-5">
-        <h2 className="text-sm font-semibold text-ink">Connect your broker</h2>
+        <h2 className="text-sm font-semibold text-ink">Connect Deriv</h2>
         <p className="mt-1 text-xs leading-relaxed text-[var(--color-ink-muted)]">
-          The terminal stays empty until it can read your account. Sign in with a MetaApi token and the
-          id of the MT5 account you provisioned there — that is how a browser reaches MetaTrader.
+          The terminal stays empty until it can read your account. Create a token under{' '}
+          <span className="text-ink">Settings → API token</span> on Deriv with the{' '}
+          <span className="text-ink">Read</span> scope, plus <span className="text-ink">Trade</span> if you
+          want the bot to place orders.
         </p>
 
         <div className="mt-4 space-y-3">
           <TextField
-            label="MetaApi token"
+            label="Deriv API token"
             type="password"
             value={token}
             onChange={setToken}
-            placeholder="eyJhbGciOi…"
-            hint="Stays in this browser. Sent only to MetaApi, never anywhere else."
+            placeholder="a1b2c3d4e5f6g7h8"
+            hint="Stays in this browser. Sent only to Deriv, never anywhere else."
           />
           <TextField
-            label="MetaApi account id"
-            value={accountId}
-            onChange={setAccountId}
-            placeholder="0f3c9d18-…"
+            label="Symbol"
+            value={symbol}
+            onChange={setSymbol}
+            placeholder={DEFAULT_SYMBOL}
+            hint="Deriv's name for spot gold. Leave as is unless your account lists it differently."
           />
           <div>
-            <label className="label">Region</label>
+            <label className="label" htmlFor="deriv-multiplier">
+              Multiplier
+            </label>
             <select
+              id="deriv-multiplier"
               className="field"
-              value={region}
-              onChange={(event) => setRegion(event.target.value as MetaApiRegion)}
+              value={multiplier}
+              onChange={(event) => setMultiplier(Number(event.target.value))}
             >
-              {METAAPI_REGIONS.map((option) => (
+              {MULTIPLIERS.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {option}×
                 </option>
               ))}
             </select>
+            <p className="mt-1 text-[0.6875rem] leading-relaxed text-[var(--color-ink-muted)]">
+              Deriv trades gold as multiplier contracts, so this is what a lot costs: a higher multiplier
+              stakes less money for the same exposure. If your account does not offer this value the
+              nearest one it does offer is used.
+            </p>
           </div>
-          <TextField label="Symbol" value={symbol} onChange={setSymbol} placeholder="XAUUSD" />
+          <TextField
+            label="App id"
+            value={appId}
+            onChange={setAppId}
+            placeholder={DEFAULT_APP_ID}
+            hint="Deriv's shared app id works. Register your own at api.deriv.com for higher rate limits."
+          />
           <Toggle
             label="Stay signed in on this device"
             hint="Keeps the token in this browser's storage so the app reconnects itself."
@@ -114,8 +134,8 @@ export function SignIn({ session }: { session: SessionState }) {
             onChange={setRemember}
           />
           <Toggle
-            label="Send orders to my broker"
-            hint="Off: fills are simulated against your broker's real prices. On: the bot places real trades on this account."
+            label="Send orders to Deriv"
+            hint="Off: fills are simulated against Deriv's real prices. On: the bot buys real contracts on this account."
             checked={liveExecution}
             onChange={setLiveExecution}
           />
@@ -123,10 +143,9 @@ export function SignIn({ session }: { session: SessionState }) {
 
         {liveExecution && (
           <p className="mt-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs leading-relaxed text-warn">
-            Live trading is armed. Once the bot is running it will open and close real positions on
-            {' '}
-            {accountId.trim() ? `account ${accountId.trim()}` : 'this account'} — up to its
-            concurrent-position cap. Try it on a demo account first, and check the caps on Trade
+            Live trading is armed. Once the bot is running it will buy and sell real {multiplier}×
+            multiplier contracts on this Deriv account — up to its concurrent-position cap, each one
+            staking real money. Try it on a Deriv demo account first, and check the caps on Trade
             Settings before arming the bot.
           </p>
         )}
@@ -148,7 +167,7 @@ export function SignIn({ session }: { session: SessionState }) {
 
       <section className="card-flush p-4">
         <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--color-ink-muted)]">
-          No broker to hand?
+          No Deriv account to hand?
         </h3>
         <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-ink-dim)]">
           Demo mode runs the same engine against a simulated gold feed. Every figure in it is invented —
@@ -164,7 +183,7 @@ export function SignIn({ session }: { session: SessionState }) {
       </section>
 
       <p className="px-1 text-center text-[0.6875rem] leading-relaxed text-[var(--color-ink-muted)]">
-        Prices, history, balance and equity always come from your broker. Whether orders reach it is
+        Prices, history, balance and open contracts always come from Deriv. Whether orders reach it is
         the switch above.
       </p>
     </div>

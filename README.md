@@ -7,7 +7,7 @@ accounts, and postpones recovery trades until they project a net-positive close.
 ```
 web/      React + Vite terminal (Cobalt Dark, desktop / Android / iOS layouts)
 engine/   Isomorphic trading engine: feed, accounts, bot, copier, recovery
-server/   REST + WebSocket API, MetaApi routing, static hosting
+server/   REST + WebSocket API and static hosting for the client/server build
 shared/   Domain model and trade math used everywhere
 ```
 
@@ -36,12 +36,14 @@ npm run build:standalone --workspace web    # -> web/dist-standalone/index.html
 
 Push the folder to any static host. The committed workflow does this on every
 push: it runs the tests, builds the page and force-pushes it to the `gh-pages`
-branch, which GitHub Pages serves. Everything except MetaApi routing works,
-since live orders need a server-held token.
+branch, which GitHub Pages serves. This is the build that trades: live orders go
+straight from the page to Deriv with your own API token, which never leaves the
+browser.
 
 **Client/server.** The Node execution server owns the book and streams it to any
 number of connected terminals — use this when the engine must keep running while
-no browser is open, or when routing real orders through MetaApi.
+no browser is open. It runs the same engine on a simulated feed; live Deriv
+routing lives in the standalone build so the token stays on your machine.
 
 ## Development
 
@@ -62,8 +64,7 @@ npm test             # execution-engine test suite
 npm run typecheck    # all workspaces
 ```
 
-Copy `.env.example` to `.env` to change the port, the simulated feed, or to point
-accounts at MetaApi.
+Copy `.env.example` to `.env` to change the port or the simulated feed.
 
 ### Hosting it
 
@@ -85,12 +86,7 @@ fly open                               # opens the terminal in your browser
 ```
 
 `app = "sentinal-mt5"` in `fly.toml` is almost certainly taken globally — `fly launch`
-will ask for another name and rewrite the file. To route live orders through MetaApi,
-set the token as a secret rather than an env var:
-
-```bash
-fly secrets set METAAPI_TOKEN=... METAAPI_REGION=new-york
-```
+will ask for another name and rewrite the file.
 
 `fly logs` tails the engine; `/api/health` is wired as the health check.
 
@@ -169,10 +165,20 @@ the same pass.
 
 - **`sim`** — full local simulation: spread, commission, margin, stop/target execution.
   This is what the demo accounts use.
-- **`metaapi`** — routes real orders through the MetaApi cloud REST API
-  (`server/src/broker/metaapi.ts`, registered onto the engine as a provider). Needs `METAAPI_TOKEN` in the server environment plus
-  a provisioned MetaApi account id; without them the account reports itself offline
-  rather than quietly trading a simulation.
+- **`deriv`** — trades your real Deriv account over Deriv's WebSocket API
+  (`web/src/broker/derivClient.ts` and `derivAccount.ts`, registered onto the engine as a
+  provider by the browser build). It needs nothing but an API token with the Read and
+  Trade scopes, entered on the sign-in screen and held in that browser only.
+
+  Deriv does not expose MetaTrader order entry over its API, so an API token trades
+  Deriv's own **multiplier contracts**: you commit a stake, Deriv multiplies the
+  exposure, and the stop loss and take profit are money amounts rather than price
+  levels. That suits this engine, which already sizes every leg by money risk. The lot
+  figures on screen are converted at `stake = lots x 100 oz x price / multiplier`, so a
+  lot here earns exactly what the same lot earns on MetaTrader; `web/src/broker/__tests__`
+  holds the conversion to that. Stops, targets, running profit and the position book are
+  read back from Deriv rather than simulated, and nothing is filled locally when an order
+  is rejected.
 
 The market feed is a pluggable component (`engine/src/market/feed.ts`): it synthesises
 XAUUSD ticks with volatility clustering by default, and anything downstream only
@@ -187,8 +193,8 @@ the engine.
    position management filtered by account, the recovery queue and the copy-trade log.
 3. **Trade Settings** — strategy, dollar-based risk, all multi-position controls, basket
    management, zero-loss parameters and daily circuit breakers.
-4. **Connect Broker** — link MT5/MetaApi accounts, set master/follower roles and edit
-   copy routing per follower.
+4. **Connect Broker** — review the linked Deriv account, add simulated followers, set
+   master/follower roles and edit copy routing per follower.
 
 ## API
 
@@ -208,6 +214,8 @@ lines, recovery-queue changes and equity samples.
 
 ## Risk note
 
-The default configuration trades a simulated account. Point it at a live MetaApi account
-and it will place real orders — several at a time, by design. Check the caps on the Trade
-Settings screen before arming anything funded.
+Connecting alone never trades: fills are simulated against Deriv's real prices until you
+turn on **Send orders to Deriv** at sign-in. With it on, the bot buys real multiplier
+contracts — several at a time, by design, each staking real money. Try it on a Deriv demo
+account first, and check the caps on the Trade Settings screen before arming anything
+funded.

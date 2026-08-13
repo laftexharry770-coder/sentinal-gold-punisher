@@ -2,25 +2,23 @@ import type {
   AccountState,
   BotConfig,
   BotStats,
-  Candle,
   ClosedTrade,
   CopySettings,
   Position,
   ServerMessage,
 } from '@sentinal/shared';
-import type { BrokerCredentials } from '../broker/metaapiClient';
+import type { DerivCredentials } from '../broker/derivClient';
 import type { ConnectInput, SessionState } from './session';
 
 export interface NewAccountPayload {
   name: string;
   login: string;
   server: string;
-  provider: 'sim' | 'metaapi' | 'mt5';
+  provider: 'sim' | 'deriv';
   broker?: string;
   role: 'master' | 'slave' | 'standalone';
   leverage?: number;
   initialBalance?: number;
-  metaApiAccountId?: string;
   copy?: Partial<CopySettings>;
 }
 
@@ -62,10 +60,7 @@ export interface TerminalBackend {
   connectBroker(input: ConnectInput): Promise<void>;
   startDemo(): Promise<void>;
   signOut(): Promise<void>;
-  savedCredentials(): BrokerCredentials | null;
-
-  /** Bars across a past window, for measuring reactions to news releases. */
-  historyAround(from: number, to: number): Promise<Candle[]>;
+  savedCredentials(): DerivCredentials | null;
 
   addAccount(payload: NewAccountPayload): Promise<AccountState>;
   updateAccount(

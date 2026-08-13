@@ -6,8 +6,7 @@ import { useTerminal } from '../store';
 
 const PROVIDER_LABEL: Record<AccountState['provider'], string> = {
   sim: 'Simulated',
-  metaapi: 'MetaApi',
-  mt5: 'MT5 bridge',
+  deriv: 'Deriv',
 };
 
 /** Copy routing editor shown on every follower account. */
@@ -191,7 +190,6 @@ export function ConnectBroker() {
     role: accounts.length === 0 ? 'master' : 'slave',
     leverage: 500,
     initialBalance: 10_000,
-    metaApiAccountId: '',
   });
   const [copyMasterId, setCopyMasterId] = useState('');
   const [multiplier, setMultiplier] = useState(1);
@@ -206,7 +204,6 @@ export function ConnectBroker() {
     try {
       const payload: NewAccountPayload = {
         ...form,
-        metaApiAccountId: form.provider === 'metaapi' ? form.metaApiAccountId : undefined,
         copy:
           form.role === 'slave'
             ? {
@@ -219,7 +216,7 @@ export function ConnectBroker() {
       };
       const account = await api.addAccount(payload);
       setOk(`${account.name} linked`);
-      setForm((prev) => ({ ...prev, name: '', login: '', server: '', metaApiAccountId: '' }));
+      setForm((prev) => ({ ...prev, name: '', login: '', server: '' }));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'link failed');
     } finally {
@@ -259,25 +256,15 @@ export function ConnectBroker() {
             followers in the same pass.
           </p>
           <p className="text-[var(--color-ink-muted)]">
-            MetaApi accounts route real orders through the MetaApi cloud and need{' '}
-            <span className="tabular text-ink">METAAPI_TOKEN</span> set on the server plus a provisioned account id.
-            Without them the account reports itself offline rather than trading a simulation.
+            Your <span className="font-semibold text-ink">Deriv</span> account is linked at sign-in, and it is the only
+            account that can place real orders. Followers added here are simulated: they mirror the master's legs
+            against Deriv's live prices so you can see how a routing rule would have behaved, without staking money on
+            it.
           </p>
         </Card>
       </div>
 
-      <Card title="Link a broker" subtitle="MT5 / MetaApi account" bodyClass="p-4 space-y-3">
-        <Segmented
-          label="Connection type"
-          value={form.provider}
-          onChange={(provider) => setForm((prev) => ({ ...prev, provider }))}
-          options={[
-            { value: 'sim', label: 'Simulated' },
-            { value: 'metaapi', label: 'MetaApi' },
-            { value: 'mt5', label: 'MT5' },
-          ]}
-        />
-
+      <Card title="Add a follower" subtitle="Simulated mirror account" bodyClass="p-4 space-y-3">
         <TextField
           label="Display name"
           value={form.name}
@@ -303,16 +290,6 @@ export function ConnectBroker() {
           placeholder="IC Markets"
         />
 
-        {form.provider === 'metaapi' && (
-          <TextField
-            label="MetaApi account id"
-            value={form.metaApiAccountId ?? ''}
-            onChange={(metaApiAccountId) => setForm((prev) => ({ ...prev, metaApiAccountId }))}
-            placeholder="0f3c…"
-            hint="The API token itself lives in the server environment, never in the browser."
-          />
-        )}
-
         <div className="grid grid-cols-2 gap-3">
           <NumberField
             label="Leverage"
@@ -323,13 +300,12 @@ export function ConnectBroker() {
             suffix=":1"
           />
           <NumberField
-            label={form.provider === 'sim' ? 'Start balance' : 'Expected balance'}
+            label="Start balance"
             value={form.initialBalance ?? 10000}
             onChange={(initialBalance) => setForm((prev) => ({ ...prev, initialBalance }))}
             step={500}
             min={0}
             suffix="$"
-            disabled={form.provider !== 'sim'}
           />
         </div>
 

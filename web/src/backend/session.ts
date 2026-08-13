@@ -1,4 +1,4 @@
-import type { BrokerCredentials } from '../broker/metaapiClient';
+import type { DerivCredentials } from '../broker/derivClient';
 
 export interface BrokerIdentity {
   login: string;
@@ -18,11 +18,11 @@ export type SessionState =
 
 export const LOCKED: SessionState = { status: 'locked', error: null };
 
-export interface ConnectInput extends BrokerCredentials {
+export interface ConnectInput extends DerivCredentials {
   remember: boolean;
   /**
-   * Opt-in: when true the engine sends real orders to the broker. Off by
-   * default so connecting to watch prices can never place a trade.
+   * Opt-in: when true the engine buys real Deriv contracts. Off by default so
+   * connecting to watch prices can never place a trade.
    */
   liveExecution: boolean;
 }

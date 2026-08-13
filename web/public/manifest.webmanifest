@@ -19,7 +19,6 @@
   "shortcuts": [
     { "name": "Trading Dashboard", "url": "./?screen=dashboard" },
     { "name": "Bot Control Center", "url": "./?screen=bot" },
-    { "name": "News & Calendar", "url": "./?screen=news" },
     { "name": "Trade Settings", "url": "./?screen=settings" }
   ]
 }

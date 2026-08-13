@@ -15,8 +15,3 @@ services:
       # Quote cadence for the simulated XAUUSD feed, milliseconds per tick.
       - key: TICK_INTERVAL_MS
         value: "400"
-      # Set in the Render dashboard to route live orders through MetaApi.
-      - key: METAAPI_TOKEN
-        sync: false
-      - key: METAAPI_REGION
-        value: new-york

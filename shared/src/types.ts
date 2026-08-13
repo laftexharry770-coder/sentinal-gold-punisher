@@ -6,7 +6,7 @@
 
 export type Side = 'buy' | 'sell';
 
-export type BrokerProvider = 'sim' | 'metaapi' | 'mt5';
+export type BrokerProvider = 'sim' | 'deriv';
 
 export type AccountRole = 'master' | 'slave' | 'standalone';
 
@@ -79,8 +79,6 @@ export interface AccountConfig {
   /** Starting balance for simulated accounts. */
   initialBalance: number;
   copy: CopySettings;
-  /** MetaApi account token / id — never returned to the browser. */
-  metaApiAccountId?: string;
 }
 
 export interface AccountState {

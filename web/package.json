@@ -8,7 +8,8 @@
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build:standalone": "vite build --config vite.standalone.config.ts && node ../scripts/build-standalone.mjs"
+    "build:standalone": "vite build --config vite.standalone.config.ts && node ../scripts/build-standalone.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@sentinal/engine": "*",
@@ -23,6 +24,7 @@
     "@vitejs/plugin-react": "^6.0.5",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.7.3",
-    "vite": "^8.2.1"
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
   }
 }

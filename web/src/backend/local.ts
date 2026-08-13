@@ -28,14 +28,16 @@ import type {
 import { registerSymbolSpec, XAUUSD } from '@sentinal/shared';
 import {
   BrokerError,
-  MetaApiClient,
+  CONTRACT_SIZE,
+  DEFAULT_SYMBOL,
+  DerivClient,
   clearCredentials,
   goldCandidates,
   loadCredentials,
   saveCredentials,
-  type BrokerCredentials,
-} from '../broker/metaapiClient';
-import { MetaApiBrowserAccount } from '../broker/metaapiAccount';
+  type DerivCredentials,
+} from '../broker/derivClient';
+import { DerivBrowserAccount } from '../broker/derivAccount';
 import { LOCKED, type ConnectInput, type SessionState } from './session';
 import type {
   BotView,
@@ -45,24 +47,17 @@ import type {
   TerminalBackend,
 } from './types';
 
-/** How often the broker is polled for a fresh XAUUSD quote. */
-const QUOTE_POLL_MS = 1000;
-/** How often the broker's own balance and equity are refreshed. */
-const ACCOUNT_POLL_MS = 15_000;
-
 /**
  * Runs the engine inside the browser tab.
  *
  * Nothing starts until a session exists: no feed, no accounts, no prices. A
- * broker session drives the feed from real MetaApi quotes; demo mode is an
- * explicit choice and is labelled as simulated throughout the UI.
+ * Deriv session drives the feed from real Deriv ticks; demo mode is an explicit
+ * choice and is labelled as simulated throughout the UI.
  */
 export function createLocalBackend(): TerminalBackend {
   let runtime: Runtime | null = null;
   let session: SessionState = LOCKED;
-  let client: MetaApiClient | null = null;
-  let quoteTimer: number | undefined;
-  let accountTimer: number | undefined;
+  let client: DerivClient | null = null;
 
   const sessionListeners = new Set<(state: SessionState) => void>();
   const streamListeners = new Set<Subscription>();
@@ -119,17 +114,14 @@ export function createLocalBackend(): TerminalBackend {
   };
 
   const teardown = (): void => {
-    window.clearInterval(quoteTimer);
-    window.clearInterval(accountTimer);
-    quoteTimer = undefined;
-    accountTimer = undefined;
+    client?.close();
+    client = null;
     runtime?.stop();
     runtime = null;
-    client = null;
   };
 
   const requireRuntime = (): Runtime => {
-    if (!runtime) throw new Error('Connect a broker before trading.');
+    if (!runtime) throw new Error('Connect your Deriv account before trading.');
     return runtime;
   };
 
@@ -141,133 +133,154 @@ export function createLocalBackend(): TerminalBackend {
     teardown();
     setSession({ status: 'connecting', error: null });
 
-    const credentials: BrokerCredentials = {
+    const credentials: DerivCredentials = {
       token: input.token.trim(),
-      accountId: input.accountId.trim(),
-      region: input.region,
-      symbol: input.symbol.trim().toUpperCase() || 'XAUUSD',
+      appId: input.appId.trim(),
+      symbol: input.symbol.trim() || DEFAULT_SYMBOL,
+      multiplier: input.multiplier,
     };
 
     try {
-      const api = new MetaApiClient(credentials);
-      // Validating first means a bad token never leaves a half-built terminal.
-      const info = await api.accountInfo();
-
-      // Brokers name gold differently and quote it on their own contract terms,
-      // so take the specification from this account rather than assuming one.
-      const spec = await api.specification().catch(async (err: unknown) => {
-        if (err instanceof BrokerError && err.status === 404) {
-          const candidates = goldCandidates(await api.symbols().catch(() => []));
-          throw new BrokerError(
-            candidates.length > 0
-              ? `${credentials.symbol} is not tradable on this account. This broker offers: ${candidates.join(', ')}.`
-              : `${credentials.symbol} is not tradable on this account. Check the symbol name in your terminal.`,
-            404,
-          );
-        }
-        throw err;
+      const api = new DerivClient(credentials);
+      // Authorising first means a bad token never leaves a half-built terminal.
+      const info = await api.open((reason) => {
+        setSession({ status: 'locked', error: reason });
+        teardown();
       });
+      client = api;
+
+      // Deriv names its instruments its own way and quotes them to its own
+      // precision, so take the pip size from the account rather than assuming.
+      const symbols = await api.activeSymbols().catch(() => []);
+      const listed = symbols.find((entry) => entry.symbol === credentials.symbol);
+      if (symbols.length > 0 && !listed) {
+        const candidates = goldCandidates(symbols);
+        throw new BrokerError(
+          candidates.length > 0
+            ? `${credentials.symbol} is not tradable on this account. Deriv offers: ${candidates.join(', ')}.`
+            : `${credentials.symbol} is not tradable on this account.`,
+          'UnknownSymbol',
+        );
+      }
+
+      const pip = listed && listed.pip > 0 ? listed.pip : 0.01;
+      const digits = Math.max(0, Math.round(-Math.log10(pip)));
+
+      // Multiplier terms decide what a lot costs, so they are read before the
+      // engine is built rather than discovered on the first rejected order.
+      const terms = await api.multiplierTerms(credentials.symbol).catch(() => null);
+      if (input.liveExecution && !terms) {
+        throw new BrokerError(
+          `This Deriv account cannot trade multiplier contracts on ${credentials.symbol}. ` +
+            'Connect without live execution to watch prices, or use an account whose landing company offers multipliers.',
+          'NoMultipliers',
+        );
+      }
+      if (terms && !terms.multipliers.includes(credentials.multiplier)) {
+        const nearest = terms.multipliers.reduce((best, value) =>
+          Math.abs(value - credentials.multiplier) < Math.abs(best - credentials.multiplier) ? value : best,
+        );
+        credentials.multiplier = nearest;
+      }
 
       registerSymbolSpec({
-        symbol: spec.symbol,
-        digits: spec.digits,
-        tickSize: spec.tickSize,
-        contractSize: spec.contractSize,
-        minLot: spec.minLot,
-        maxLot: spec.maxLot,
-        lotStep: spec.lotStep,
-        // Spread comes from the live quote; commission is not exposed per
-        // symbol by MetaApi, so the built-in estimate stands until overridden.
-        baseSpread: XAUUSD.baseSpread,
+        symbol: credentials.symbol,
+        digits,
+        tickSize: pip,
+        // Deriv stakes in currency rather than lots; 100 oz per lot is the
+        // MetaTrader convention this terminal converts to and from.
+        contractSize: CONTRACT_SIZE,
+        minLot: 0.01,
+        maxLot: 100,
+        lotStep: 0.01,
+        // Deriv publishes a single quote and charges a commission on the
+        // contract instead of widening the price, so there is no spread here.
+        baseSpread: 0,
         commissionPerLot: XAUUSD.commissionPerLot,
       });
-      credentials.symbol = spec.symbol;
 
+      const account = info.isVirtual ? 'Deriv demo account' : 'Deriv real account';
       const rt = createRuntime({
         seedPrice: 0,
-        tickIntervalMs: QUOTE_POLL_MS,
+        tickIntervalMs: 1000,
         seed: null,
         historyBars: 240,
         source: 'external',
         banner:
-          `Connected to ${info.broker} · ${info.server} — live ${credentials.symbol} feed ` +
-          `(${spec.contractSize} per lot, ${spec.digits} digits, ${spec.minLot} min lot)`,
+          `Connected to ${info.landingCompany} · ${info.loginId} (${account}) — live ` +
+          `${listed?.displayName ?? credentials.symbol} feed` +
+          (terms ? ` · multiplier ${credentials.multiplier}×, min stake ${terms.minStake} ${info.currency}` : ''),
       });
       attach(rt);
       runtime = rt;
-      client = api;
 
       rt.bot.updateConfig({ symbol: credentials.symbol });
 
-      // Real bars first, so the chart and the indicators open on broker history.
+      // Real bars first, so the chart and the indicators open on Deriv history.
       const history = await api.history(240).catch(() => [] as Candle[]);
       if (history.length > 0) {
         rt.feed.seedCandles(history);
         rt.bot.prime(history);
       }
 
-      if (input.liveExecution) {
-        // Orders, closes and the position book come from the broker itself.
+      if (input.liveExecution && terms) {
+        // Orders, closes and the position book come from Deriv itself.
         rt.accounts.registerProvider(
-          'metaapi',
-          (cfg) => new MetaApiBrowserAccount(cfg, api, (message) => rt.journal.write('error', null, message)),
+          'deriv',
+          (cfg) =>
+            new DerivBrowserAccount(cfg, api, credentials.multiplier, terms.minStake, (message) =>
+              rt.journal.write('error', null, message),
+            ),
         );
       }
 
       addAccount(rt, {
-        name: `${info.broker} ${info.login}`.trim(),
-        provider: input.liveExecution ? 'metaapi' : 'sim',
-        login: info.login,
-        server: info.server,
-        broker: info.broker,
+        name: `${info.landingCompany} ${info.loginId}`.trim(),
+        provider: input.liveExecution && terms ? 'deriv' : 'sim',
+        login: info.loginId,
+        server: info.isVirtual ? 'Deriv (virtual)' : 'Deriv',
+        broker: info.landingCompany,
         currency: info.currency,
-        leverage: info.leverage,
+        // Multiplier contracts carry their leverage in the multiplier itself.
+        leverage: credentials.multiplier,
         initialBalance: info.balance,
         role: 'master',
       });
 
-      const tick = await api.currentPrice();
-      rt.feed.pushTick(tick);
+      await api.subscribeTicks((tick) => rt.feed.pushTick(tick));
+      await api
+        .subscribeBalance((balance) => {
+          // Display Deriv's own balance rather than a drifting local copy.
+          for (const acc of rt.accounts.list()) acc.syncBalance(balance);
+          emit({ type: 'accounts', payload: rt.accounts.states() });
+          emit({ type: 'portfolio', payload: rt.accounts.portfolio() });
+        })
+        .catch(() => {
+          rt.journal.write('warn', null, 'Deriv refused the balance stream; balance may lag.');
+        });
+
       emit({ type: 'snapshot', payload: rt.snapshot() });
-
-      quoteTimer = window.setInterval(() => {
-        void api
-          .currentPrice()
-          .then((next) => rt.feed.pushTick(next))
-          .catch((err) => {
-            rt.journal.write('warn', null, `Quote poll failed: ${err instanceof Error ? err.message : 'error'}`);
-          });
-      }, QUOTE_POLL_MS);
-
-      accountTimer = window.setInterval(() => {
-        void api
-          .accountInfo()
-          .then((fresh) => {
-            // Display the broker's own balance rather than a drifting local copy.
-            for (const account of rt.accounts.list()) account.syncBalance(fresh.balance);
-            emit({ type: 'accounts', payload: rt.accounts.states() });
-            emit({ type: 'portfolio', payload: rt.accounts.portfolio() });
-          })
-          .catch(() => {
-            /* transient; the quote poll surfaces persistent failures */
-          });
-      }, ACCOUNT_POLL_MS);
 
       if (input.remember) saveCredentials(credentials);
       else clearCredentials();
 
       rt.journal.write(
-        input.liveExecution ? 'warn' : 'info',
+        input.liveExecution && terms ? 'warn' : 'info',
         null,
-        input.liveExecution
-          ? 'Live execution armed — orders will be sent to your broker'
-          : 'Paper execution — fills are simulated against your broker\'s prices',
+        input.liveExecution && terms
+          ? `Live execution armed — the bot will buy real ${credentials.multiplier}× multiplier contracts`
+          : "Paper execution — fills are simulated against Deriv's real prices",
       );
 
       setSession({
         status: 'live',
-        broker: { login: info.login, server: info.server, broker: info.broker, currency: info.currency },
-        execution: input.liveExecution ? 'broker' : 'local',
+        broker: {
+          login: info.loginId,
+          server: info.isVirtual ? 'Deriv (virtual)' : 'Deriv',
+          broker: info.landingCompany,
+          currency: info.currency,
+        },
+        execution: input.liveExecution && terms ? 'broker' : 'local',
       });
     } catch (err) {
       teardown();
@@ -327,9 +340,6 @@ export function createLocalBackend(): TerminalBackend {
     signOut,
     savedCredentials: () => loadCredentials(),
 
-    // Only a live broker session has history to measure; demo mode has none.
-    historyAround: async (from, to) => (client ? client.historyRange(from, to) : []),
-
     /* ---------------------------- commands ---------------------------- */
 
     addAccount: async (payload: NewAccountPayload) =>
@@ -342,7 +352,6 @@ export function createLocalBackend(): TerminalBackend {
         broker: payload.broker,
         leverage: payload.leverage,
         initialBalance: payload.initialBalance,
-        metaApiAccountId: payload.metaApiAccountId,
         copy: payload.copy,
       }),
 
