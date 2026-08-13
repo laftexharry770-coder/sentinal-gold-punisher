@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatMoney, type AccountState, type CopySettings } from '@sentinal/shared';
 import { api, type NewAccountPayload } from '../api';
+import type { DerivMt5Account } from '../broker/derivClient';
 import { Card, Chip, EmptyState, NumberField, Segmented, TextField, Toggle } from '../components/ui';
 import { useTerminal } from '../store';
 
@@ -177,6 +178,69 @@ function AccountCard({ account, masters }: { account: AccountState; masters: Acc
   );
 }
 
+/**
+ * The MetaTrader 5 accounts Deriv holds for this user.
+ *
+ * Shown because they are real money the operator has, and labelled as not
+ * tradable from here because Deriv's API manages MT5 accounts but has no call
+ * that places an order on one. Saying so on the screen is better than leaving
+ * somebody to discover it by arming a bot that never fires.
+ */
+function Mt5Accounts() {
+  const [accounts, setAccounts] = useState<DerivMt5Account[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .mt5Accounts()
+      .then((list) => !cancelled && setAccounts(list))
+      .catch(() => !cancelled && setAccounts([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (accounts !== null && accounts.length === 0) return null;
+
+  return (
+    <Card
+      title="Your Deriv MT5 accounts"
+      subtitle={accounts ? `${accounts.length} reported by Deriv` : 'Asking Deriv…'}
+      bodyClass="p-3 space-y-2"
+    >
+      {accounts === null ? (
+        <p className="px-1 py-2 text-xs text-[var(--color-ink-muted)]">Reading your MT5 accounts…</p>
+      ) : (
+        accounts.map((account) => (
+          <div key={`${account.login}-${account.server}`} className="card-flush px-3.5 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="tabular text-sm font-semibold text-ink">{account.login}</span>
+                  <Chip tone={account.accountType === 'demo' ? 'neutral' : 'gold'}>
+                    {account.accountType || 'mt5'}
+                  </Chip>
+                  {account.marketType && <Chip tone="neutral">{account.marketType}</Chip>}
+                </div>
+                <p className="mt-0.5 text-[0.6875rem] text-[var(--color-ink-muted)]">{account.server}</p>
+              </div>
+              <div className="tabular shrink-0 text-right">
+                <div className="text-sm font-semibold text-ink">{formatMoney(account.balance)}</div>
+                <div className="text-[0.6875rem] text-[var(--color-ink-muted)]">{account.currency}</div>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+      <p className="px-1 pt-1 text-[0.6875rem] leading-relaxed text-[var(--color-ink-muted)]">
+        Shown for reference only. Deriv's API manages MT5 accounts but has no call that places an order on
+        one, so the bot cannot trade these — its live orders go to the Deriv account you signed in with.
+        Trading an MT5 account needs a MetaTrader bridge.
+      </p>
+    </Card>
+  );
+}
+
 export function ConnectBroker() {
   const { accounts } = useTerminal();
   const masters = accounts.filter((a) => a.role === 'master');
@@ -243,6 +307,8 @@ export function ConnectBroker() {
             accounts.map((account) => <AccountCard key={account.id} account={account} masters={masters} />)
           )}
         </Card>
+
+        <Mt5Accounts />
 
         <Card title="How routing works" bodyClass="p-4 text-xs leading-relaxed text-[var(--color-ink-dim)] space-y-2">
           <p>

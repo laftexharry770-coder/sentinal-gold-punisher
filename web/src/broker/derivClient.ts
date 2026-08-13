@@ -89,6 +89,24 @@ export interface DerivMultiplierTerms {
   maxStake: number;
 }
 
+/**
+ * A MetaTrader 5 account Deriv holds for this user.
+ *
+ * Deriv's API reports these but will not take orders for them — placing a
+ * trade on MT5 needs something that speaks the MetaTrader protocol. They are
+ * shown so the terminal can account for money it can see, and are marked
+ * plainly as not tradable from here.
+ */
+export interface DerivMt5Account {
+  login: string;
+  server: string;
+  balance: number;
+  currency: string;
+  /** Deriv's own words: 'demo' or 'real'. */
+  accountType: string;
+  marketType: string;
+}
+
 /** A live Deriv contract, normalised from `proposal_open_contract`. */
 export interface DerivContract {
   contractId: string;
@@ -708,6 +726,37 @@ export class DerivClient {
       if (!raw || !raw.contract_id) return;
       handler(normaliseContract(raw));
     });
+  }
+
+  /**
+   * The MetaTrader 5 accounts Deriv holds for this user.
+   *
+   * Read-only by necessity: Deriv's API manages MT5 accounts but has no call
+   * that places an order on one, so these are reported and never traded. An
+   * account that cannot answer this returns nothing rather than failing the
+   * session, since the terminal works without it.
+   */
+  async mt5Accounts(): Promise<DerivMt5Account[]> {
+    const reply = await this.send({ mt5_login_list: 1 }).catch(() => null);
+    const list = reply?.mt5_login_list;
+    if (!Array.isArray(list)) return [];
+
+    return list
+      .map((raw) => {
+        const entry = raw as Record<string, unknown>;
+        const server = entry.server_info as { id?: unknown } | undefined;
+        return {
+          // Deriv prefixes the login (MTD41204838); the bare digits are what
+          // MetaTrader itself shows, so both halves are kept legible.
+          login: String(entry.login ?? '').replace(/^MT[DR]?/i, ''),
+          server: String(server?.id ?? entry.server ?? ''),
+          balance: num(entry.balance),
+          currency: String(entry.currency ?? 'USD'),
+          accountType: String(entry.account_type ?? ''),
+          marketType: String(entry.market_type ?? ''),
+        };
+      })
+      .filter((account) => account.login.length > 0);
   }
 
   /** Contracts currently open, used to seed the book before the stream warms up. */

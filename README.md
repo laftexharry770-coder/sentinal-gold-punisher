@@ -181,6 +181,12 @@ the same pass.
   provider by the browser build). It needs nothing but an API token with the Read and
   Trade scopes, entered on the sign-in screen and held in that browser only.
 
+  Deriv also reports the user's MetaTrader 5 accounts, and the Connect Broker screen
+  lists them with their balances. They are read-only: Deriv's API manages MT5 accounts
+  but exposes no call that places an order on one, so the bot cannot trade them and the
+  screen says so. Trading an MT5 account needs a bridge that speaks the MetaTrader
+  protocol; live orders from this terminal go to the Deriv account that signed in.
+
   Signing in follows Deriv's current scheme: the access token is presented as a bearer
   credential to `POST /trading/v1/options/accounts/{accountId}/otp`, with the app id in a
   `Deriv-App-ID` header, and Deriv answers with a WebSocket URL that is already

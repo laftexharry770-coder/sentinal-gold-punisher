@@ -350,6 +350,10 @@ export function createLocalBackend(): TerminalBackend {
     signOut,
     savedCredentials: () => loadCredentials(),
 
+    // Empty without a session, and empty when Deriv will not answer — the
+    // terminal is fully usable either way.
+    mt5Accounts: async () => (client ? client.mt5Accounts().catch(() => []) : []),
+
     /* ---------------------------- commands ---------------------------- */
 
     addAccount: async (payload: NewAccountPayload) =>

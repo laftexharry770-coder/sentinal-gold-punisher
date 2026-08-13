@@ -49,6 +49,8 @@ export function createRemoteBackend(): TerminalBackend {
     startDemo: async () => {},
     signOut: async () => {},
     savedCredentials: () => null,
+    // The execution server holds no Deriv session of its own.
+    mt5Accounts: async () => [],
 
     subscribe({ onMessage, onStatus }: Subscription) {
       let socket: WebSocket | null = null;

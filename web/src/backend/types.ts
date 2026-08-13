@@ -7,7 +7,7 @@ import type {
   Position,
   ServerMessage,
 } from '@sentinal/shared';
-import type { DerivCredentials } from '../broker/derivClient';
+import type { DerivCredentials, DerivMt5Account } from '../broker/derivClient';
 import type { ConnectInput, SessionState } from './session';
 
 export interface NewAccountPayload {
@@ -61,6 +61,12 @@ export interface TerminalBackend {
   startDemo(): Promise<void>;
   signOut(): Promise<void>;
   savedCredentials(): DerivCredentials | null;
+
+  /**
+   * MetaTrader 5 accounts Deriv reports for this user. Read-only: Deriv's API
+   * has no call that places an order on one.
+   */
+  mt5Accounts(): Promise<DerivMt5Account[]>;
 
   addAccount(payload: NewAccountPayload): Promise<AccountState>;
   updateAccount(
