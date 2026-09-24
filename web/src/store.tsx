@@ -7,12 +7,15 @@ import {
   type BotStats,
   type Candle,
   type ClosedTrade,
+  type DispatchReport,
   type EquityPoint,
   type LogEntry,
+  type PendingOrder,
   type PortfolioSnapshot,
   type Position,
   type RecoveryTask,
   type ServerMessage,
+  type StrategyInfo,
   type Tick,
 } from '@sentinal/shared';
 
@@ -30,6 +33,13 @@ export interface TerminalState {
   stats: BotStats | null;
   portfolio: PortfolioSnapshot | null;
   equityCurve: EquityPoint[];
+  /** What is trading: a built-in model, an uploaded EA, or an EA mirrored from MT5. */
+  strategy: StrategyInfo | null;
+  /** Recent order dispatches with each account's acknowledgement time, newest first. */
+  dispatches: DispatchReport[];
+  orders: PendingOrder[];
+  /** Local time of the last quote, for staleness. */
+  quoteAt: number | null;
 }
 
 const EMPTY: TerminalState = {
@@ -46,6 +56,10 @@ const EMPTY: TerminalState = {
   stats: null,
   portfolio: null,
   equityCurve: [],
+  strategy: null,
+  dispatches: [],
+  orders: [],
+  quoteAt: null,
 };
 
 type Action = { type: 'connection'; connected: boolean } | { type: 'message'; message: ServerMessage };
@@ -80,10 +94,14 @@ function reduce(state: TerminalState, action: Action): TerminalState {
         stats: p.stats,
         portfolio: p.portfolio,
         equityCurve: p.equityCurve,
+        strategy: p.strategy ?? null,
+        dispatches: p.dispatches ?? [],
+        orders: p.orders ?? [],
+        quoteAt: p.quote ? Date.now() : null,
       };
     }
     case 'tick':
-      return { ...state, previousQuote: state.quote, quote: message.payload };
+      return { ...state, previousQuote: state.quote, quote: message.payload, quoteAt: Date.now() };
     case 'candle':
       return { ...state, candles: applyCandle(state.candles, message.payload.candle) };
     case 'accounts':
@@ -102,6 +120,12 @@ function reduce(state: TerminalState, action: Action): TerminalState {
       return { ...state, portfolio: message.payload };
     case 'equity':
       return { ...state, equityCurve: [...state.equityCurve, message.payload].slice(-720) };
+    case 'strategy':
+      return { ...state, strategy: message.payload };
+    case 'dispatch':
+      return { ...state, dispatches: [message.payload, ...state.dispatches].slice(0, 50) };
+    case 'orders':
+      return { ...state, orders: message.payload };
     default:
       return state;
   }

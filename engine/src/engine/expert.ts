@@ -21,7 +21,6 @@ import {
 import type { Deal, PendingOrder, PendingType, Position, StrategyInfo, StrategyInput, SymbolSpec, Tick } from '@sentinal/shared';
 import { Emitter } from '../emitter.js';
 import type { OpenRequest, TradingAccount } from '../broker/account.js';
-import type { AccountManager } from '../broker/manager.js';
 import type { Journal } from '../journal.js';
 import type { CopyTradeEngine } from './copier.js';
 
@@ -122,7 +121,6 @@ export class ExpertRunner extends Emitter {
   tradingAllowed = true;
 
   constructor(
-    private readonly accounts: AccountManager,
     private readonly journal: Journal,
     private readonly dispatcher: () => CopyTradeEngine | null,
     private history: HistoryProvider | null = null,

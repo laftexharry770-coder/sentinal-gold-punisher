@@ -233,7 +233,7 @@ export function TextField({
           autoCapitalize={secret ? 'none' : undefined}
           autoCorrect={secret ? 'off' : undefined}
           spellCheck={secret ? false : undefined}
-          className={`field${error ? ' border-loss/60' : ''}${controls ? ' pr-24' : ''}`}
+          className={`field${error ? ' border-loss/60' : ''}${controls ? ' pr-36' : ''}`}
           value={value}
           placeholder={placeholder}
           aria-invalid={error ? true : undefined}

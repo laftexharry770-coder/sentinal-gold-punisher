@@ -104,7 +104,7 @@ describe('bar boundaries follow MetaTrader', () => {
 });
 
 describe('the Sentinal expert advisor', () => {
-  const source = readFileSync(fileURLToPath(new URL('./fixtures/Sentinal.mq5', import.meta.url)), 'utf8');
+  const source = readFileSync(fileURLToPath(new URL('../../samples/Sentinal.mq5', import.meta.url)), 'utf8');
 
   it('compiles, exposes its inputs and trades a simulated market', async () => {
     const compiled = compileMql5(source, 'Sentinal.mq5');

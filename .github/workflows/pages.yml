@@ -48,6 +48,7 @@ jobs:
       - name: Build the standalone terminal
         run: |
           npm run build --workspace shared
+          npm run build --workspace mql5
           npm run build --workspace engine
           npm run build:standalone --workspace web
 

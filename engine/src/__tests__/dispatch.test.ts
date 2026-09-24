@@ -161,7 +161,7 @@ describe('broker symbol names', () => {
 });
 
 describe('an uploaded expert as the strategy', () => {
-  const source = readFileSync(fileURLToPath(new URL('../../../mql5/src/__tests__/fixtures/Sentinal.mq5', import.meta.url)), 'utf8');
+  const source = readFileSync(fileURLToPath(new URL('../../../mql5/samples/Sentinal.mq5', import.meta.url)), 'utf8');
 
   it('runs the EA on the master and mirrors its trades to the follower', async () => {
     const runtime = createRuntime({ seedPrice: 3300, tickIntervalMs: 50, seed: 11, historyBars: 400 });

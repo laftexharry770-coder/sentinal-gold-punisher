@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { formatMoney, formatVolume, type RecoveryTask } from '@sentinal/shared';
 import { api } from '../api';
+import { startBotNow, stopBotNow } from '../components/botActions';
 import { LogFeed } from '../components/LogFeed';
 import { PositionsTable } from '../components/PositionsTable';
 import { Card, Chip, EmptyState, Money, StatTile } from '../components/ui';
@@ -38,7 +39,7 @@ function RecoveryRow({ task }: { task: RecoveryTask }) {
 }
 
 export function BotControlCenter() {
-  const { accounts, positions, config, stats, recoveries, logs } = useTerminal();
+  const { accounts, positions, config, stats, recoveries, logs, strategy } = useTerminal();
   const [tab, setTab] = useState<string>('all');
   const [busy, setBusy] = useState(false);
 
@@ -54,9 +55,9 @@ export function BotControlCenter() {
   const control = async (action: 'start' | 'stop' | 'flatten') => {
     setBusy(true);
     try {
-      if (action === 'start') await api.startBot();
-      else if (action === 'stop') await api.stopBot(false);
-      else await api.stopBot(true);
+      if (action === 'start') await startBotNow();
+      else if (action === 'stop') await stopBotNow(false);
+      else if (window.confirm('Stop the bot and close every position it opened, with their copies?')) await stopBotNow(true);
     } finally {
       setBusy(false);
     }
@@ -66,14 +67,14 @@ export function BotControlCenter() {
     <div className="space-y-3">
       <Card
         title="Execution engine"
-        subtitle={`${config.strategy} · ${config.execution} · ${config.symbol}`}
+        subtitle={`${strategy?.name ?? config.strategy} · ${config.source === 'builtin' ? config.execution : config.source === 'mql5' ? 'MQL5 expert' : 'mirrored from MT5'} · ${config.symbol}`}
         actions={
           <div className="flex gap-2">
             <button className="btn btn-primary px-3 py-1.5 text-xs" disabled={busy || stats?.running} onClick={() => void control('start')}>
-              Arm
+              Start
             </button>
             <button className="btn px-3 py-1.5 text-xs" disabled={busy || !stats?.running} onClick={() => void control('stop')}>
-              Disarm
+              Stop
             </button>
             <button className="btn btn-sell px-3 py-1.5 text-xs" disabled={busy} onClick={() => void control('flatten')}>
               Flatten
@@ -85,9 +86,9 @@ export function BotControlCenter() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
           <StatTile
             label="Status"
-            value={stats?.running ? 'ARMED' : 'IDLE'}
+            value={stats?.running ? 'RUNNING' : 'STOPPED'}
             tone={stats?.running ? 'profit' : 'neutral'}
-            sub={stats?.running ? `up ${uptime(stats.startedAt)}` : 'engine disarmed'}
+            sub={stats?.running ? `up ${uptime(stats.startedAt)}` : 'bot stopped'}
           />
           <StatTile
             label="Bot legs"

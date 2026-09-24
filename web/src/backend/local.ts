@@ -1,8 +1,14 @@
 import {
+  CommandError,
+  MetaApiAccount,
+  MetaApiGateway,
   addAccount,
+  attachMetaApi,
   closeAll,
   closePosition,
+  configureExpert,
   createRuntime,
+  loadStrategy,
   placeOrder,
   removeAccount,
   seedDemoAccounts,
@@ -10,7 +16,10 @@ import {
   stopBot,
   updateAccount,
   updateBotConfig,
+  useBuiltinStrategy,
+  type MetaApiLink,
   type Runtime,
+  type StrategyFile,
 } from '@sentinal/engine';
 import type {
   AccountState,
@@ -18,46 +27,43 @@ import type {
   Candle,
   ClosedTrade,
   CopySettings,
+  DispatchReport,
   EquityPoint,
   LogEntry,
-  Position,
+  PendingOrder,
   RecoveryTask,
   ServerMessage,
+  StrategyInfo,
   Tick,
 } from '@sentinal/shared';
-import { registerSymbolSpec, XAUUSD } from '@sentinal/shared';
+import { createMetaApiClient, explainMetaApiError } from './metaapiSdk';
 import {
-  BrokerError,
-  CONTRACT_SIZE,
-  DEFAULT_SYMBOL,
-  DerivClient,
-  clearCredentials,
-  goldCandidates,
-  loadCredentials,
-  saveCredentials,
-  type DerivCredentials,
-} from '../broker/derivClient';
-import { DerivBrowserAccount } from '../broker/derivAccount';
+  loadBotConfig,
+  loadMetaApiCredentials,
+  loadStrategyFiles,
+  saveBotConfig,
+  saveMetaApiCredentials,
+  saveStrategyFiles,
+} from './persist';
 import { LOCKED, type ConnectInput, type SessionState } from './session';
-import type {
-  BotView,
-  NewAccountPayload,
-  OrderPayload,
-  Subscription,
-  TerminalBackend,
-} from './types';
+import type { BotView, NewAccountPayload, OrderPayload, Subscription, TerminalBackend } from './types';
 
 /**
  * Runs the engine inside the browser tab.
  *
  * Nothing starts until a session exists: no feed, no accounts, no prices. A
- * Deriv session drives the feed from real Deriv ticks; demo mode is an explicit
- * choice and is labelled as simulated throughout the UI.
+ * MetaApi session drives the feed from the master account's own quotes, sends
+ * orders straight to MetaTrader, and keeps every follower on its own
+ * streaming connection so a copy leaves the moment the master's order does.
+ * Demo mode is an explicit choice and is labelled as simulated throughout.
  */
 export function createLocalBackend(): TerminalBackend {
   let runtime: Runtime | null = null;
   let session: SessionState = LOCKED;
-  let client: DerivClient | null = null;
+  let gateway: MetaApiGateway | null = null;
+  let link: MetaApiLink | null = null;
+  /** Gateways opened for listing accounts before sign-in, by token. */
+  const gateways = new Map<string, Promise<MetaApiGateway>>();
 
   const sessionListeners = new Set<(state: SessionState) => void>();
   const streamListeners = new Set<Subscription>();
@@ -77,9 +83,30 @@ export function createLocalBackend(): TerminalBackend {
     emit({ type: 'portfolio', payload: rt.accounts.portfolio() });
   };
 
+  const gatewayFor = (token: string): Promise<MetaApiGateway> => {
+    const key = token.trim();
+    let pending = gateways.get(key);
+    if (!pending) {
+      pending = createMetaApiClient(key).then((client) => new MetaApiGateway(client));
+      gateways.set(key, pending);
+      pending.catch(() => gateways.delete(key));
+    }
+    return pending;
+  };
+
   /** Wires a fresh runtime's events onto the message stream. */
   const attach = (rt: Runtime): void => {
     let lastBookPush = 0;
+    let bookTimer: ReturnType<typeof setTimeout> | null = null;
+    // Broker accounts change between ticks (fills, balance, reconnects), so
+    // their changes are batched into one push per frame rather than lost.
+    const scheduleBook = (): void => {
+      if (bookTimer) return;
+      bookTimer = setTimeout(() => {
+        bookTimer = null;
+        if (runtime === rt) pushBook(rt);
+      }, 120);
+    };
 
     rt.feed.on('tick', (payload: unknown) => {
       const tick = payload as Tick;
@@ -94,9 +121,8 @@ export function createLocalBackend(): TerminalBackend {
     );
     rt.feed.on('equity', (payload: unknown) => emit({ type: 'equity', payload: payload as EquityPoint }));
     rt.journal.on('log', (payload: unknown) => emit({ type: 'log', payload: payload as LogEntry }));
-    rt.accounts.on('accounts', (payload: unknown) =>
-      emit({ type: 'accounts', payload: payload as AccountState[] }),
-    );
+    rt.accounts.on('accounts', (payload: unknown) => emit({ type: 'accounts', payload: payload as AccountState[] }));
+    rt.accounts.on('changed', scheduleBook);
     rt.accounts.on('opened', () => {
       emit({ type: 'positions', payload: rt.accounts.allPositions() });
       emit({ type: 'accounts', payload: rt.accounts.states() });
@@ -107,21 +133,44 @@ export function createLocalBackend(): TerminalBackend {
       emit({ type: 'accounts', payload: rt.accounts.states() });
       emit({ type: 'portfolio', payload: rt.accounts.portfolio() });
     });
-    rt.bot.on('bot', (payload: unknown) => emit({ type: 'bot', payload: payload as BotView }));
-    rt.bot.on('recoveries', (payload: unknown) =>
-      emit({ type: 'recoveries', payload: payload as RecoveryTask[] }),
-    );
+    rt.accounts.on('partial', () => emit({ type: 'history', payload: rt.accounts.allHistory() }));
+    rt.accounts.on('orders', (payload: unknown) => emit({ type: 'orders', payload: payload as PendingOrder[] }));
+    rt.bot.on('bot', (payload: unknown) => {
+      const view = payload as BotView;
+      emit({ type: 'bot', payload: view });
+      saveBotConfig(view.config);
+    });
+    rt.bot.on('recoveries', (payload: unknown) => emit({ type: 'recoveries', payload: payload as RecoveryTask[] }));
+    rt.bot.on('strategy', (payload: unknown) => emit({ type: 'strategy', payload: payload as StrategyInfo }));
+    rt.copier.on('dispatch', (payload: unknown) => emit({ type: 'dispatch', payload: payload as DispatchReport }));
+  };
+
+  /** Settings and the strategy from the last visit, so a reload picks up where it left off. */
+  const restore = async (rt: Runtime): Promise<void> => {
+    const config = loadBotConfig();
+    if (config) rt.bot.updateConfig({ ...config, enabled: false });
+    const saved = loadStrategyFiles();
+    if (!saved) return;
+    try {
+      const outcome = await loadStrategy(rt, saved.files);
+      if (outcome.kind === 'mql5' && !outcome.result.ok) saveStrategyFiles(null);
+      // Inputs saved with the settings belong to this EA; loading reset them.
+      if (config?.expertInputs) rt.bot.updateConfig({ expertInputs: config.expertInputs, expertTimeframe: config.expertTimeframe ?? 1 });
+    } catch (err) {
+      rt.journal.write('warn', null, `The saved strategy could not be restored: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const teardown = (): void => {
-    client?.close();
-    client = null;
+    link?.detach();
+    link = null;
     runtime?.stop();
     runtime = null;
+    gateway = null;
   };
 
   const requireRuntime = (): Runtime => {
-    if (!runtime) throw new Error('Connect your Deriv account before trading.');
+    if (!runtime) throw new Error('Connect a MetaTrader account before trading.');
     return runtime;
   };
 
@@ -131,171 +180,79 @@ export function createLocalBackend(): TerminalBackend {
 
   const connectBroker = async (input: ConnectInput): Promise<void> => {
     teardown();
-    setSession({ status: 'connecting', error: null });
-
-    const credentials: DerivCredentials = {
-      token: input.token.trim(),
-      appId: input.appId.trim(),
-      accountId: input.accountId.trim(),
-      symbol: input.symbol.trim() || DEFAULT_SYMBOL,
-      multiplier: input.multiplier,
-    };
+    const token = input.token.trim();
+    setSession({ status: 'connecting', error: null, step: 'Opening MetaApi' });
 
     try {
-      const api = new DerivClient(credentials);
-      // Authorising first means a bad token never leaves a half-built terminal.
-      const info = await api.open((reason) => {
-        setSession({ status: 'locked', error: reason });
-        teardown();
-      });
-      client = api;
+      if (!input.masterId) throw new Error('Choose the master account.');
+      gateway = await gatewayFor(token);
 
-      // Deriv names its instruments its own way and quotes them to its own
-      // precision, so take the pip size from the account rather than assuming.
-      const symbols = await api.activeSymbols().catch(() => []);
-      const listed = symbols.find((entry) => entry.symbol === credentials.symbol);
-      if (symbols.length > 0 && !listed) {
-        const candidates = goldCandidates(symbols);
-        throw new BrokerError(
-          candidates.length > 0
-            ? `${credentials.symbol} is not tradable on this account. Deriv offers: ${candidates.join(', ')}.`
-            : `${credentials.symbol} is not tradable on this account.`,
-          'UnknownSymbol',
-        );
-      }
-
-      const pip = listed && listed.pip > 0 ? listed.pip : 0.01;
-      const digits = Math.max(0, Math.round(-Math.log10(pip)));
-
-      // Multiplier terms decide what a lot costs, so they are read before the
-      // engine is built rather than discovered on the first rejected order.
-      const terms = await api.multiplierTerms(credentials.symbol).catch(() => null);
-      if (input.liveExecution && !terms) {
-        throw new BrokerError(
-          `This Deriv account cannot trade multiplier contracts on ${credentials.symbol}. ` +
-            'Connect without live execution to watch prices, or use an account whose landing company offers multipliers.',
-          'NoMultipliers',
-        );
-      }
-      if (terms && !terms.multipliers.includes(credentials.multiplier)) {
-        const nearest = terms.multipliers.reduce((best, value) =>
-          Math.abs(value - credentials.multiplier) < Math.abs(best - credentials.multiplier) ? value : best,
-        );
-        credentials.multiplier = nearest;
-      }
-
-      registerSymbolSpec({
-        symbol: credentials.symbol,
-        digits,
-        tickSize: pip,
-        // Deriv stakes in currency rather than lots; 100 oz per lot is the
-        // MetaTrader convention this terminal converts to and from.
-        contractSize: CONTRACT_SIZE,
-        minLot: 0.01,
-        maxLot: 100,
-        lotStep: 0.01,
-        // Deriv publishes a single quote and charges a commission on the
-        // contract instead of widening the price, so there is no spread here.
-        baseSpread: 0,
-        commissionPerLot: XAUUSD.commissionPerLot,
-      });
-
-      const account = info.isVirtual ? 'Deriv demo account' : 'Deriv real account';
       const rt = createRuntime({
         seedPrice: 0,
         tickIntervalMs: 1000,
         seed: null,
         historyBars: 240,
         source: 'external',
-        banner:
-          `Connected to ${info.landingCompany} · ${info.loginId} (${account}) — live ` +
-          `${listed?.displayName ?? credentials.symbol} feed` +
-          (terms ? ` · multiplier ${credentials.multiplier}×, min stake ${terms.minStake} ${info.currency}` : ''),
       });
       attach(rt);
       runtime = rt;
 
-      rt.bot.updateConfig({ symbol: credentials.symbol });
-
-      if (api.refusedAppId) {
-        rt.journal.write(
-          'warn',
-          null,
-          `Deriv refused app id ${api.refusedAppId}, so the shared id ${api.activeAppId} is carrying this session. ` +
-            'A token issued for your own app does not authorise under a different one.',
-        );
-      }
-
-      // Real bars first, so the chart and the indicators open on Deriv history.
-      const history = await api.history(240).catch(() => [] as Candle[]);
-      if (history.length > 0) {
-        rt.feed.seedCandles(history);
-        rt.bot.prime(history);
-      }
-
-      if (input.liveExecution && terms) {
-        // Orders, closes and the position book come from Deriv itself.
-        rt.accounts.registerProvider(
-          'deriv',
-          (cfg) =>
-            new DerivBrowserAccount(cfg, api, credentials.multiplier, terms.minStake, (message) =>
-              rt.journal.write('error', null, message),
-            ),
-        );
-      }
-
-      addAccount(rt, {
-        name: `${info.landingCompany} ${info.loginId}`.trim(),
-        provider: input.liveExecution && terms ? 'deriv' : 'sim',
-        login: info.loginId,
-        server: info.isVirtual ? 'Deriv (virtual)' : 'Deriv',
-        broker: info.landingCompany,
-        currency: info.currency,
-        // Multiplier contracts carry their leverage in the multiplier itself.
-        leverage: credentials.multiplier,
-        initialBalance: info.balance,
-        role: 'master',
+      const summaries = await gateway.listAccounts();
+      const master = summaries.find((s) => s.id === input.masterId);
+      if (!master) throw new Error('That master account is no longer on this MetaApi token.');
+      setSession({
+        status: 'connecting',
+        error: null,
+        step: master.state === 'DEPLOYED' ? `Synchronising ${master.login} on ${master.server}` : `Starting MetaApi's server for ${master.login} — up to a minute`,
       });
 
-      await api.subscribeTicks((tick) => rt.feed.pushTick(tick));
-      await api
-        .subscribeBalance((balance) => {
-          // Display Deriv's own balance rather than a drifting local copy.
-          for (const acc of rt.accounts.list()) acc.syncBalance(balance);
-          emit({ type: 'accounts', payload: rt.accounts.states() });
-          emit({ type: 'portfolio', payload: rt.accounts.portfolio() });
-        })
-        .catch(() => {
-          rt.journal.write('warn', null, 'Deriv refused the balance stream; balance may lag.');
-        });
+      link = await attachMetaApi(rt, gateway, {
+        masterId: input.masterId,
+        followerIds: input.followerIds,
+        symbol: input.symbol,
+        paper: !input.liveExecution,
+        followerCopy: { sizing: 'multiplier', multiplier: input.followerMultiplier > 0 ? input.followerMultiplier : 1 },
+      });
+      const state = link.master.state();
+      rt.journal.write(
+        'info',
+        link.master.id,
+        `Connected to ${state.broker} · ${state.login} (${state.accountType}) — live ${link.master.symbol} feed through MetaApi`,
+      );
 
+      await restore(rt);
       emit({ type: 'snapshot', payload: rt.snapshot() });
 
-      if (input.remember) saveCredentials(credentials);
-      else clearCredentials();
+      saveMetaApiCredentials(
+        input.remember ? { token, masterId: input.masterId, followerIds: input.followerIds, symbol: input.symbol } : null,
+      );
 
       rt.journal.write(
-        input.liveExecution && terms ? 'warn' : 'info',
+        input.liveExecution ? 'warn' : 'info',
         null,
-        input.liveExecution && terms
-          ? `Live execution armed — the bot will buy real ${credentials.multiplier}× multiplier contracts`
-          : "Paper execution — fills are simulated against Deriv's real prices",
+        input.liveExecution
+          ? `Live execution armed — orders go to MetaTrader on ${state.login} and ${link.followers.length} follower(s)`
+          : "Paper execution — fills are simulated against your broker's real quotes; nothing reaches MetaTrader",
       );
 
       setSession({
         status: 'live',
         broker: {
-          login: info.loginId,
-          server: info.isVirtual ? 'Deriv (virtual)' : 'Deriv',
-          broker: info.landingCompany,
-          currency: info.currency,
+          login: state.login,
+          server: state.server,
+          broker: state.broker,
+          currency: state.currency,
+          accountType: state.accountType,
+          platform: state.platform,
+          metaApiId: state.metaApiId,
         },
-        execution: input.liveExecution && terms ? 'broker' : 'local',
+        execution: input.liveExecution ? 'broker' : 'local',
       });
     } catch (err) {
       teardown();
-      setSession({ status: 'locked', error: err instanceof Error ? err.message : 'Could not connect.' });
-      throw err;
+      const message = explainMetaApiError(err);
+      setSession({ status: 'locked', error: message });
+      throw new Error(message);
     }
   };
 
@@ -313,13 +270,16 @@ export function createLocalBackend(): TerminalBackend {
     seedDemoAccounts(rt);
     rt.start();
     runtime = rt;
+    await restore(rt);
     emit({ type: 'snapshot', payload: rt.snapshot() });
     setSession({ status: 'demo' });
   };
 
   const signOut = async (): Promise<void> => {
     teardown();
-    clearCredentials();
+    for (const pending of gateways.values()) void pending.then((g) => g.close()).catch(() => undefined);
+    gateways.clear();
+    saveMetaApiCredentials(null);
     setSession(LOCKED);
   };
 
@@ -345,51 +305,103 @@ export function createLocalBackend(): TerminalBackend {
       };
     },
 
+    listMetaApiAccounts: async (token) => {
+      try {
+        // An empty token asks for the signed-in session's own accounts.
+        const gw = token.trim() ? await gatewayFor(token) : gateway;
+        if (!gw) throw new Error('Sign in with a MetaApi token first.');
+        return await gw.listAccounts();
+      } catch (err) {
+        if (token.trim()) gateways.delete(token.trim());
+        throw new Error(explainMetaApiError(err));
+      }
+    },
+
+    provisionMetaApiAccount: async (token, input) => {
+      try {
+        return await (await gatewayFor(token)).provision(input);
+      } catch (err) {
+        throw new Error(explainMetaApiError(err));
+      }
+    },
+
     connectBroker,
     startDemo,
     signOut,
-    savedCredentials: () => loadCredentials(),
+    savedCredentials: () => loadMetaApiCredentials(),
 
-    // Empty without a session, and empty when Deriv will not answer — the
-    // terminal is fully usable either way.
-    mt5Accounts: async () => (client ? client.mt5Accounts().catch(() => []) : []),
+    /* ----------------------------- accounts ---------------------------- */
 
-    verifyMt5: async (login, password, kind) => {
-      if (!client) throw new Error('Connect your Deriv account first — MT5 is checked through it.');
-      await client.checkMt5Password(login.trim(), password, kind);
+    addAccount: async (payload: NewAccountPayload) => addAccount(requireRuntime(), payload),
+
+    addMetaApiFollower: async (metaApiId: string, copy: Partial<CopySettings>) => {
+      const rt = requireRuntime();
+      if (!gateway || !link) throw new Error('Followers from MetaApi need a MetaApi session.');
+      const summary = (await gateway.listAccounts()).find((s) => s.id === metaApiId);
+      if (!summary) throw new Error('That account is not on this MetaApi token.');
+      if (rt.accounts.list().some((a) => a.config.metaApiId === metaApiId)) throw new Error(`${summary.name} is already linked.`);
+      const account = rt.accounts.add({
+        name: summary.name,
+        provider: 'metaapi',
+        metaApiId,
+        login: summary.login,
+        server: summary.server,
+        broker: summary.server,
+        role: 'slave',
+        initialBalance: 0,
+        copy: { sizing: 'multiplier', multiplier: 1, ...copy, enabled: true, masterId: link.master.id },
+      });
+      if (account instanceof MetaApiAccount) link.followers.push(account);
+      return account.state();
     },
 
-    /* ---------------------------- commands ---------------------------- */
+    updateAccount: async (id, patch: { name?: string; role?: AccountState['role']; copy?: Partial<CopySettings> }) =>
+      updateAccount(requireRuntime(), id, patch),
 
-    addAccount: async (payload: NewAccountPayload) =>
-      addAccount(requireRuntime(), {
-        name: payload.name,
-        login: payload.login,
-        server: payload.server,
-        provider: payload.provider,
-        role: payload.role,
-        broker: payload.broker,
-        leverage: payload.leverage,
-        initialBalance: payload.initialBalance,
-        copy: payload.copy,
-      }),
+    removeAccount: async (id) => {
+      const rt = requireRuntime();
+      if (link && link.master.id === id) {
+        throw new CommandError('The master is the session itself — sign out to change it.');
+      }
+      if (link) link.followers = link.followers.filter((f) => f.id !== id);
+      return removeAccount(rt, id);
+    },
 
-    updateAccount: async (
-      id,
-      patch: { name?: string; role?: AccountState['role']; copy?: Partial<CopySettings> },
-    ) => updateAccount(requireRuntime(), id, patch),
+    streamEveryTick: async (id) => {
+      const account = requireRuntime().accounts.get(id);
+      if (!(account instanceof MetaApiAccount)) throw new Error('Only MetaApi accounts stream quotes.');
+      await account.streamEveryTick();
+    },
 
-    removeAccount: async (id) => removeAccount(requireRuntime(), id),
+    /* ----------------------------- trading ----------------------------- */
 
-    order: async (payload: OrderPayload) =>
-      placeOrder(requireRuntime(), payload) as Promise<{ opened: Position[]; errors: string[] }>,
+    order: async (payload: OrderPayload) => placeOrder(requireRuntime(), payload),
 
     closePosition: async (id) => closePosition(requireRuntime(), id) as Promise<ClosedTrade>,
 
     closeAll: async (payload) => closeAll(requireRuntime(), payload),
 
+    /* ----------------------------- strategy ---------------------------- */
+
     saveBotConfig: async (patch: Partial<BotConfig>) => updateBotConfig(requireRuntime(), patch),
     startBot: async () => startBot(requireRuntime()),
     stopBot: async (closePositions = false) => stopBot(requireRuntime(), closePositions),
+
+    loadStrategy: async (files: StrategyFile[]) => {
+      const rt = requireRuntime();
+      const outcome = await loadStrategy(rt, files);
+      const ok = outcome.kind === 'ex5' || outcome.result.ok;
+      if (ok && !saveStrategyFiles(files)) {
+        rt.journal.write('warn', null, 'This browser would not store the strategy files, so it will need uploading again next visit.');
+      }
+      return outcome;
+    },
+
+    useBuiltinStrategy: async (strategy) => {
+      saveStrategyFiles(null);
+      return useBuiltinStrategy(requireRuntime(), strategy);
+    },
+
+    configureExpert: async (patch) => configureExpert(requireRuntime(), patch),
   };
 }

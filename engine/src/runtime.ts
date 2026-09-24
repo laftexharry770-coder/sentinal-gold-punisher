@@ -85,7 +85,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   const copier = new CopyTradeEngine(accounts, journal);
   // Every order the bot sends reaches the master and the followers together.
   bot.setDispatcher(copier);
-  const expert = new ExpertRunner(accounts, journal, () => copier, options.history ?? new FeedHistoryProvider(feed), options.storage);
+  const expert = new ExpertRunner(journal, () => copier, options.history ?? new FeedHistoryProvider(feed), options.storage);
   bot.setExpertRunner(expert);
 
   // Load history into the indicators so arming the bot acts on the next tick

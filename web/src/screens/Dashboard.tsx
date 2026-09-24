@@ -137,7 +137,7 @@ export function Dashboard() {
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card
-          title="XAUUSD · M1"
+          title={`${quote?.symbol ?? config.symbol} · M1`}
           subtitle={quote ? `bid ${formatPrice(quote.bid)} / ask ${formatPrice(quote.ask)}` : 'awaiting feed'}
           actions={
             <div className="flex items-center gap-1.5">

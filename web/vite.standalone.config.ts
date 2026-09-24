@@ -22,7 +22,12 @@ export default defineConfig({
     modulePreload: false,
     assetsInlineLimit: 100_000_000,
     cssCodeSplit: false,
-    // One chunk, so there is nothing for the page to fetch at runtime.
-    codeSplitting: false,
+    // One chunk, so there is nothing for the page to fetch at runtime — the
+    // lazily imported MetaApi SDK included, or connecting would ask for a file
+    // the single-page build no longer has.
+    rolldownOptions: {
+      output: { codeSplitting: false },
+    },
+    chunkSizeWarningLimit: 4096,
   },
 });

@@ -1,9 +1,11 @@
 import type { AccountState, BotConfig, ClosedTrade, CopySettings, Position, ServerMessage } from '@sentinal/shared';
-import type { SessionState } from './session';
+import type { BrokerIdentity, SessionState } from './session';
 import type {
   BotView,
+  MetaApiAccountSummary,
   NewAccountPayload,
   OrderPayload,
+  StrategyLoadOutcome,
   Subscription,
   TerminalBackend,
 } from './types';
@@ -27,33 +29,50 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-/** Talks to the Node execution server over REST plus a WebSocket stream. */
+const post = <T>(path: string, body?: unknown) =>
+  call<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+
+/**
+ * Talks to the Node execution server over REST plus a WebSocket stream.
+ *
+ * The server holds the MetaApi token and the accounts, and keeps trading
+ * when every browser is closed — which is where a copier belongs. This build
+ * is never gated behind a sign-in screen.
+ */
 export function createRemoteBackend(): TerminalBackend {
-  // The execution server owns the broker session and its accounts, so this
-  // build is never gated behind a sign-in screen.
-  const serverSession: SessionState = {
+  let session: SessionState = {
     status: 'live',
-    broker: { login: '', server: 'execution server', broker: 'Sentinal', currency: 'USD' },
+    broker: { login: '', server: 'execution server', broker: 'Sentinal', currency: 'USD', accountType: 'sim', platform: 'sim', metaApiId: null },
     execution: 'broker',
   };
+  const listeners = new Set<(state: SessionState) => void>();
+
+  const refreshSession = () =>
+    call<{ broker: BrokerIdentity; execution: 'broker' | 'local' }>('/session')
+      .then((s) => {
+        session = { status: 'live', broker: s.broker, execution: s.execution };
+        for (const listener of listeners) listener(session);
+      })
+      .catch(() => undefined);
 
   return {
-    sessionState: () => serverSession,
+    sessionState: () => session,
     onSession(listener) {
-      listener(serverSession);
-      return () => {};
+      listeners.add(listener);
+      listener(session);
+      void refreshSession();
+      return () => {
+        listeners.delete(listener);
+      };
     },
+    listMetaApiAccounts: () => call<MetaApiAccountSummary[]>('/metaapi/accounts'),
+    provisionMetaApiAccount: (_token, input) => post<MetaApiAccountSummary>('/metaapi/accounts', input),
     connectBroker: async () => {
-      throw new Error('Link accounts from the Connect Broker screen on the server build.');
+      throw new Error('The execution server connects with METAAPI_TOKEN from its environment.');
     },
     startDemo: async () => {},
     signOut: async () => {},
     savedCredentials: () => null,
-    // The execution server holds no Deriv session of its own.
-    mt5Accounts: async () => [],
-    verifyMt5: async () => {
-      throw new Error('MT5 sign-in runs through a Deriv session in the browser build.');
-    },
 
     subscribe({ onMessage, onStatus }: Subscription) {
       let socket: WebSocket | null = null;
@@ -94,25 +113,26 @@ export function createRemoteBackend(): TerminalBackend {
       };
     },
 
-    addAccount: (payload: NewAccountPayload) =>
-      call<AccountState>('/accounts', { method: 'POST', body: JSON.stringify(payload) }),
+    addAccount: (payload: NewAccountPayload) => post<AccountState>('/accounts', payload),
+    addMetaApiFollower: (metaApiId: string, copy: Partial<CopySettings>) =>
+      post<AccountState>('/metaapi/followers', { metaApiId, copy }),
     updateAccount: (id, patch: { name?: string; role?: string; copy?: Partial<CopySettings> }) =>
       call<AccountState>(`/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
     removeAccount: (id) => call<{ ok: boolean }>(`/accounts/${id}`, { method: 'DELETE' }),
+    streamEveryTick: async (id) => {
+      await post(`/accounts/${id}/stream-every-tick`);
+    },
 
-    order: (payload: OrderPayload) =>
-      call<{ opened: Position[]; errors: string[] }>('/orders', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }),
-    closePosition: (id) => call<ClosedTrade>(`/positions/${id}/close`, { method: 'POST' }),
-    closeAll: (payload) =>
-      call<{ closed: number }>('/positions/close-all', { method: 'POST', body: JSON.stringify(payload) }),
+    order: (payload: OrderPayload) => post<{ opened: Position[]; errors: string[] }>('/orders', payload),
+    closePosition: (id) => post<ClosedTrade>(`/positions/${id}/close`),
+    closeAll: (payload) => post<{ closed: number }>('/positions/close-all', payload),
 
     saveBotConfig: (patch: Partial<BotConfig>) =>
       call<BotView>('/bot/config', { method: 'PATCH', body: JSON.stringify(patch) }),
-    startBot: () => call<BotView>('/bot/start', { method: 'POST' }),
-    stopBot: (closePositions = false) =>
-      call<BotView>('/bot/stop', { method: 'POST', body: JSON.stringify({ closePositions }) }),
+    startBot: () => post<BotView>('/bot/start'),
+    stopBot: (closePositions = false) => post<BotView>('/bot/stop', { closePositions }),
+    loadStrategy: (files) => post<StrategyLoadOutcome>('/strategy', { files }),
+    useBuiltinStrategy: (strategy) => post<BotView>('/strategy/builtin', { strategy }),
+    configureExpert: (patch) => call<BotView>('/strategy/expert', { method: 'PATCH', body: JSON.stringify(patch) }),
   };
 }
