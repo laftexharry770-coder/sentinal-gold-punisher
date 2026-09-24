@@ -6,11 +6,13 @@ import {
   addMetaApiFollower,
   closeAll,
   closePosition,
+  addExperts,
   configureExpert,
-  loadStrategy,
   modifyPosition,
   placeOrder,
   removeAccount,
+  removeExpert,
+  setExpertEnabled,
   startBot,
   stopBot,
   updateAccount,
@@ -18,7 +20,7 @@ import {
   useBuiltinStrategy,
   type StrategyFile,
 } from '@sentinal/engine';
-import type { BotConfig, CopySettings } from '@sentinal/shared';
+import type { AiConfig, BotConfig, CopySettings } from '@sentinal/shared';
 import type { ServerContext } from './app.js';
 
 function asNumber(value: unknown): number | undefined {
@@ -80,14 +82,10 @@ export function parseBotPatch(body: Record<string, unknown>): Partial<BotConfig>
 
   if (body.sizing === 'fixed' || body.sizing === 'risk-percent') patch.sizing = body.sizing;
   if (body.execution === 'intrabar' || body.execution === 'bar-close') patch.execution = body.execution;
-  if (
-    body.strategy === 'burst' ||
-    body.strategy === 'adaptive-scalp' ||
-    body.strategy === 'momentum' ||
-    body.strategy === 'mean-reversion'
-  ) {
-    patch.strategy = body.strategy;
-  }
+  const strategy = asStrategy(body.strategy);
+  if (strategy) patch.strategy = strategy;
+  const ai = parseAiPatch(body.ai);
+  if (ai) patch.ai = ai as AiConfig;
 
   const burst = body.burst;
   if (burst && typeof burst === 'object') {
@@ -101,7 +99,7 @@ export function parseBotPatch(body: Record<string, unknown>): Partial<BotConfig>
       const value = asNullableNumber(src.stopLossPrice);
       if (value !== undefined) next.stopLossPrice = value && value > 0 ? value : null;
     }
-    if (src.direction === 'trend' || src.direction === 'buy' || src.direction === 'sell') next.direction = src.direction;
+    if (src.direction === 'ai' || src.direction === 'trend' || src.direction === 'buy' || src.direction === 'sell') next.direction = src.direction;
     if (typeof src.comment === 'string') next.comment = src.comment.slice(0, 16);
     patch.burst = next as BotConfig['burst'];
   }
@@ -166,6 +164,60 @@ function fail(res: Response, err: unknown): void {
 }
 
 /** Uploaded strategy files, checked for shape before they reach the compiler. */
+const STRATEGIES: BotConfig['strategy'][] = ['burst', 'ai', 'adaptive-scalp', 'momentum', 'mean-reversion', 'none'];
+
+function asStrategy(value: unknown): BotConfig['strategy'] | undefined {
+  return STRATEGIES.includes(value as BotConfig['strategy']) ? (value as BotConfig['strategy']) : undefined;
+}
+
+/** The AI's settings, each held to a sensible range; anything else is ignored. */
+export function parseAiPatch(value: unknown): Partial<AiConfig> | null {
+  if (!value || typeof value !== 'object') return null;
+  const src = value as Record<string, unknown>;
+  const out: Partial<AiConfig> = {};
+  const ranges: [keyof AiConfig, number, number][] = [
+    ['minProbability', 0.5, 0.95],
+    ['riskPercent', 0.01, 10],
+    ['maxRiskPercent', 0.01, 10],
+    ['maxPositions', 1, 10],
+    ['slAtr', 0.3, 6],
+    ['rrMin', 0.5, 6],
+    ['rrMax', 0.5, 10],
+    ['breakevenAtr', 0, 10],
+    ['trailStartAtr', 0, 10],
+    ['trailAtr', 0.2, 6],
+    ['dailyLossPercent', 0, 50],
+    ['horizonBars', 1, 60],
+    ['learningRate', 0.01, 2],
+    ['guardDanger', 0.1, 1],
+    ['guardAgainst', 0.5, 0.99],
+  ];
+  for (const [key, lo, hi] of ranges) {
+    const n = asNumber(src[key]);
+    if (n !== undefined) (out as Record<string, unknown>)[key] = Math.min(hi, Math.max(lo, n));
+  }
+  for (const key of ['exitOnFlip', 'tradeVolatile', 'guardEas'] as const) {
+    const b = asBoolean(src[key]);
+    if (b !== undefined) out[key] = b;
+  }
+  const claude = src.claude;
+  if (claude && typeof claude === 'object') {
+    const c = claude as Record<string, unknown>;
+    const next: Partial<AiConfig['claude']> = {};
+    const enabled = asBoolean(c.enabled);
+    if (enabled !== undefined) next.enabled = enabled;
+    const autoApply = asBoolean(c.autoApply);
+    if (autoApply !== undefined) next.autoApply = autoApply;
+    if (typeof c.model === 'string' && /^claude-[a-z0-9.-]{1,60}$/.test(c.model)) next.model = c.model;
+    const interval = asNumber(c.intervalMin);
+    if (interval !== undefined) next.intervalMin = Math.min(1440, Math.max(0, Math.round(interval)));
+    const after = asNumber(c.afterTrades);
+    if (after !== undefined) next.afterTrades = Math.min(500, Math.max(0, Math.round(after)));
+    out.claude = next as AiConfig['claude'];
+  }
+  return out;
+}
+
 function parseFiles(body: unknown): StrategyFile[] {
   const files = (body as { files?: unknown } | null)?.files;
   if (!Array.isArray(files) || files.length === 0) throw new CommandError('Send the strategy as { files: [{ name, content, encoding }] }.');
@@ -391,75 +443,76 @@ export function createRouter(context: ServerContext): Router {
 
   /* ----------------------------- strategy ---------------------------- */
 
-  // An .ex5 arrives as base64, so this route takes larger bodies than the rest.
-  router.post('/strategy', express.json({ limit: '12mb' }), async (req, res) => {
+  // EAs arrive as text or base64 (.ex5), several at once, so this route takes larger bodies.
+  router.post('/experts', express.json({ limit: '24mb' }), async (req, res) => {
     try {
-      const files = parseFiles(req.body);
-      const outcome = await loadStrategy(runtime, files);
-      if (outcome.kind === 'ex5' || outcome.result.ok) context.state.saveStrategy(files);
-      res.json(outcome);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const enabled = asBoolean(body.enabled);
+      res.json(await addExperts(runtime, parseFiles(req.body), enabled === undefined ? {} : { enabled }));
     } catch (err) {
       fail(res, err);
     }
   });
 
-  router.get('/strategy/saved', (_req, res) => {
-    const saved = context.state.strategy();
-    const main = saved?.files.find((f) => /\.(mq5|ex5)$/i.test(f.name));
-    res.json(
-      saved && main
-        ? { fileName: main.name, kind: /\.ex5$/i.test(main.name) ? 'ex5' : 'mql5', active: saved.active, savedAt: saved.savedAt }
-        : null,
-    );
-  });
+  router.get('/experts', (_req, res) => res.json(runtime.experts.list(bot.stats().running)));
 
-  router.post('/strategy/saved/use', async (_req, res) => {
+  router.patch('/experts/:id', async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
     try {
-      const saved = context.state.strategy();
-      if (!saved) throw new CommandError('No uploaded EA is saved — upload the .mq5 or .ex5 first.', 404);
-      const outcome = await loadStrategy(runtime, saved.files);
-      if (outcome.kind === 'ex5' || outcome.result.ok) context.state.setStrategyActive(true);
-      res.json(outcome);
+      const enabled = asBoolean(body.enabled);
+      if (enabled !== undefined) await setExpertEnabled(runtime, req.params.id, enabled);
+      if ((body.inputs && typeof body.inputs === 'object') || body.timeframe !== undefined) {
+        const inputs: Record<string, string | number | boolean> = {};
+        for (const [key, value] of Object.entries((body.inputs ?? {}) as Record<string, unknown>)) {
+          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') inputs[key] = value;
+        }
+        await configureExpert(runtime, req.params.id, {
+          inputs: body.inputs && typeof body.inputs === 'object' ? inputs : undefined,
+          timeframe: asNumber(body.timeframe),
+        });
+      }
+      res.json(runtime.experts.list(bot.stats().running).find((e) => e.id === req.params.id) ?? null);
     } catch (err) {
       fail(res, err);
     }
   });
 
-  router.delete('/strategy/saved', (_req, res) => {
-    if (context.state.strategy()?.active) useBuiltinStrategy(runtime);
-    context.state.saveStrategy(null);
-    res.json({ ok: true });
+  router.delete('/experts/:id', async (req, res) => {
+    try {
+      res.json(await removeExpert(runtime, req.params.id));
+    } catch (err) {
+      fail(res, err);
+    }
   });
 
   router.post('/strategy/builtin', (req, res) => {
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    const strategy =
-      body.strategy === 'burst' || body.strategy === 'adaptive-scalp' || body.strategy === 'momentum' || body.strategy === 'mean-reversion'
-        ? body.strategy
-        : undefined;
-    // The uploaded EA is kept, so switching back needs no second upload.
-    context.state.setStrategyActive(false);
+    const strategy = asStrategy(((req.body ?? {}) as Record<string, unknown>).strategy);
+    if (!strategy) return fail(res, new CommandError(`strategy must be one of: ${STRATEGIES.join(', ')}`));
     res.json(useBuiltinStrategy(runtime, strategy));
   });
 
-  router.patch('/strategy/expert', async (req, res) => {
-    const body = (req.body ?? {}) as Record<string, unknown>;
+  /* -------------------------------- AI -------------------------------- */
+
+  router.get('/ai', (_req, res) => res.json(runtime.ai.status()));
+
+  router.post('/ai/review', async (_req, res) => {
     try {
-      const inputs: Record<string, string | number | boolean> = {};
-      if (body.inputs && typeof body.inputs === 'object') {
-        for (const [key, value] of Object.entries(body.inputs as Record<string, unknown>)) {
-          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') inputs[key] = value;
-        }
-      }
-      res.json(
-        await configureExpert(runtime, {
-          inputs: body.inputs && typeof body.inputs === 'object' ? inputs : undefined,
-          timeframe: asNumber(body.timeframe),
-        }),
-      );
+      const review = await runtime.ai.review('request');
+      if (!review) throw new CommandError('Claude review needs ANTHROPIC_API_KEY set on the server, and none may already be running.', 409);
+      res.json(review);
     } catch (err) {
       fail(res, err);
     }
+  });
+
+  router.post('/ai/pending/approve', (_req, res) => res.json(runtime.ai.approvePending()));
+  router.post('/ai/pending/dismiss', (_req, res) => {
+    runtime.ai.dismissPending();
+    res.json({ ok: true });
+  });
+  router.post('/ai/resume', (_req, res) => {
+    runtime.ai.resume();
+    res.json({ ok: true });
   });
 
   router.get('/recoveries', (_req, res) => res.json(bot.listRecoveries()));

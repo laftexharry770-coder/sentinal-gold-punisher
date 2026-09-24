@@ -74,6 +74,9 @@ export type ActionResult = { ok: true } | { ok: false; error: string };
 
 let ticketSeq = 50_000_000;
 
+/** Magic number the terminal's own built-in models stamp on their orders; EAs carry their own. */
+export const BUILTIN_MAGIC = 20260811;
+
 function nextTicket(): number {
   ticketSeq += 1;
   return ticketSeq;
@@ -245,7 +248,7 @@ export class TradingAccount extends Emitter {
       basketIndex: req.basketIndex ?? 0,
       recoveryLayer: req.recoveryLayer ?? 0,
       comment: req.comment ?? '',
-      magic: req.magic ?? 20260811,
+      magic: req.magic ?? BUILTIN_MAGIC,
       sourceId: req.sourceId ?? null,
       clientId: req.clientId ?? null,
     };

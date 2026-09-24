@@ -3,12 +3,14 @@ import { api } from './api';
 import {
   DEFAULT_BOT_CONFIG,
   type AccountState,
+  type AiStatus,
   type BotConfig,
   type BotStats,
   type Candle,
   type ClosedTrade,
   type DispatchReport,
   type EquityPoint,
+  type ExpertSlot,
   type LogEntry,
   type PendingOrder,
   type PortfolioSnapshot,
@@ -33,8 +35,12 @@ export interface TerminalState {
   stats: BotStats | null;
   portfolio: PortfolioSnapshot | null;
   equityCurve: EquityPoint[];
-  /** What is trading: a built-in model, an uploaded EA, or an EA mirrored from MT5. */
+  /** The built-in model, as the engine reports it. */
   strategy: StrategyInfo | null;
+  /** The EA library: every EA kept, which are switched on, and how each is running. */
+  experts: ExpertSlot[];
+  /** The AI: its live reading, what it has learned, Claude's reviews. */
+  ai: AiStatus | null;
   /** Recent order dispatches with each account's acknowledgement time, newest first. */
   dispatches: DispatchReport[];
   orders: PendingOrder[];
@@ -57,6 +63,8 @@ const EMPTY: TerminalState = {
   portfolio: null,
   equityCurve: [],
   strategy: null,
+  experts: [],
+  ai: null,
   dispatches: [],
   orders: [],
   quoteAt: null,
@@ -95,6 +103,8 @@ function reduce(state: TerminalState, action: Action): TerminalState {
         portfolio: p.portfolio,
         equityCurve: p.equityCurve,
         strategy: p.strategy ?? null,
+        experts: p.experts ?? [],
+        ai: p.ai ?? null,
         dispatches: p.dispatches ?? [],
         orders: p.orders ?? [],
         quoteAt: p.quote ? Date.now() : null,
@@ -122,6 +132,10 @@ function reduce(state: TerminalState, action: Action): TerminalState {
       return { ...state, equityCurve: [...state.equityCurve, message.payload].slice(-720) };
     case 'strategy':
       return { ...state, strategy: message.payload };
+    case 'experts':
+      return { ...state, experts: message.payload };
+    case 'ai':
+      return { ...state, ai: message.payload };
     case 'dispatch':
       return { ...state, dispatches: [message.payload, ...state.dispatches].slice(0, 50) };
     case 'orders':

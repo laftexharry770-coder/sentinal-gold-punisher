@@ -1,7 +1,7 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { KeyValueStore } from '@sentinal/mql5';
-import type { StrategyFile } from '@sentinal/engine';
+import type { AiStore, BrainState, ExpertLibraryStore, StoredExpert, StrategyFile } from '@sentinal/engine';
 import type { BotConfig } from '@sentinal/shared';
 
 /**
@@ -29,20 +29,53 @@ export class StateDir {
     renameSync(temp, target);
   }
 
-  /** The uploaded EA and whether it is the strategy in use (a built-in model may be trading instead). */
-  strategy(): { files: StrategyFile[]; active: boolean; savedAt: number } | null {
-    const saved = this.read<{ files?: StrategyFile[]; active?: boolean; savedAt?: number }>('strategy.json');
+  /**
+   * The single uploaded EA an earlier version kept, if any, and whether it
+   * was the strategy in use. Taken once into the EA library, then removed.
+   */
+  takeLegacyStrategy(): { files: StrategyFile[]; active: boolean } | null {
+    const saved = this.read<{ files?: StrategyFile[]; active?: boolean }>('strategy.json');
+    const file = path.join(this.dir, 'strategy.json');
+    if (existsSync(file)) renameSync(file, `${file}.migrated`);
     if (!saved || !Array.isArray(saved.files) || saved.files.length === 0) return null;
-    return { files: saved.files, active: saved.active !== false, savedAt: saved.savedAt ?? 0 };
+    return { files: saved.files, active: saved.active !== false };
   }
 
-  saveStrategy(files: StrategyFile[] | null, active = true): void {
-    this.write('strategy.json', { files: files ?? [], savedAt: Date.now(), active });
+  /** The EA library: one JSON file per EA under experts/. */
+  expertLibrary(): ExpertLibraryStore {
+    const dir = path.join(this.dir, 'experts');
+    mkdirSync(dir, { recursive: true });
+    const safe = (id: string) => id.replace(/[^A-Za-z0-9_-]/g, '');
+    return {
+      load: async () => {
+        const out: StoredExpert[] = [];
+        for (const name of readdirSync(dir)) {
+          if (!name.endsWith('.json')) continue;
+          try {
+            out.push(JSON.parse(readFileSync(path.join(dir, name), 'utf8')) as StoredExpert);
+          } catch {
+            /* a damaged entry is skipped */
+          }
+        }
+        return out;
+      },
+      save: async (expert) => {
+        const target = path.join(dir, `${safe(expert.id)}.json`);
+        writeFileSync(`${target}.tmp`, JSON.stringify(expert));
+        renameSync(`${target}.tmp`, target);
+      },
+      remove: async (id) => {
+        rmSync(path.join(dir, `${safe(id)}.json`), { force: true });
+      },
+    };
   }
 
-  setStrategyActive(active: boolean): void {
-    const saved = this.strategy();
-    if (saved) this.write('strategy.json', { ...saved, active });
+  /** The AI's learned model. */
+  aiStore(): AiStore {
+    return {
+      load: () => this.read<BrainState>('ai-model.json'),
+      save: (state) => this.write('ai-model.json', state),
+    };
   }
 
   botConfig(): Partial<BotConfig> | null {
@@ -50,7 +83,7 @@ export class StateDir {
   }
 
   saveBotConfig(config: BotConfig): void {
-    const { enabled: _enabled, symbol: _symbol, source: _source, ...rest } = config;
+    const { enabled: _enabled, symbol: _symbol, ...rest } = config;
     this.write('bot.json', rest);
   }
 

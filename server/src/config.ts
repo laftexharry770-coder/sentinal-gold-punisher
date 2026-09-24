@@ -36,6 +36,12 @@ export const config = {
    */
   autoStartBot: process.env.AUTO_START_BOT === 'true',
 
+  /**
+   * Anthropic API key for Claude's reviews of the AI. Without it the AI
+   * still trades and learns; it is just not reviewed.
+   */
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
+
   metaApi: {
     /** API access token from app.metaapi.cloud; without it the server runs the demo market. */
     token: process.env.METAAPI_TOKEN ?? '',

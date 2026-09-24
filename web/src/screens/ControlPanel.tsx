@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { burstSize, formatMoney, formatPrice, type AccountState, type StrategyInfo } from '@sentinal/shared';
+import { AI_REGIME_LABELS, burstSize, formatMoney, formatPrice, type AccountState, type AiStatus, type BotConfig, type ExpertSlot, type StrategyInfo } from '@sentinal/shared';
 import { api } from '../api';
 import type { SessionState } from '../backend/session';
+import { AiPanel } from '../components/AiPanel';
 import { startBotNow, stopBotNow } from '../components/botActions';
 import { StrategySwitch } from '../components/StrategySwitch';
 import { toast } from '../components/Toast';
@@ -149,17 +150,32 @@ const ACCOUNT_TYPE: Record<AccountState['accountType'], string> = {
   sim: 'Simulated',
 };
 
-function strategyLine(strategy: StrategyInfo | null, running: boolean): { state: CheckState; detail: string } {
-  if (!strategy) return { state: 'off', detail: 'No strategy loaded' };
-  if (strategy.status === 'failed') return { state: 'bad', detail: strategy.detail ?? `${strategy.name} stopped with an error` };
-  if (!running) return { state: 'off', detail: `${strategy.name} — stopped` };
-  if (strategy.status === 'waiting') return { state: 'wait', detail: strategy.detail ?? `${strategy.name} is loading history` };
-  if (strategy.source === 'mql5') {
-    const speed = strategy.lastTickMs !== null ? ` · ${strategy.lastTickMs < 1 ? strategy.lastTickMs.toFixed(3) : strategy.lastTickMs.toFixed(1)} ms per tick` : '';
-    return { state: 'ok', detail: `${strategy.name}: ${strategy.ticks.toLocaleString()} ticks read${speed}` };
+/** What is making the decisions, in one line: the built-in model (or the AI's read) and every EA switched on. */
+function strategyLine(strategy: StrategyInfo | null, experts: ExpertSlot[], ai: AiStatus | null, config: BotConfig, running: boolean): { state: CheckState; detail: string } {
+  const on = experts.filter((e) => e.enabled);
+  const failed = on.find((e) => e.info.status === 'failed');
+  if (failed) return { state: 'bad', detail: `${failed.info.name}: ${failed.info.detail ?? 'stopped with an error'}` };
+  const parts: string[] = [];
+  const reading = ai?.reading;
+  if (config.strategy === 'ai' || (config.strategy === 'burst' && config.burst.direction === 'ai')) {
+    if (reading && reading.ready) {
+      const p = Math.max(reading.probabilityUp, 1 - reading.probabilityUp);
+      parts.push(`AI: ${reading.probabilityUp >= 0.5 ? 'BUY' : 'SELL'} ${(p * 100).toFixed(0)}% (needs ${(reading.threshold * 100).toFixed(0)}%) · ${AI_REGIME_LABELS[reading.regime].toLowerCase()}`);
+    } else {
+      parts.push(`AI ${reading?.warmup ?? 'warming up'}`);
+    }
   }
-  if (strategy.source === 'mirror') return { state: 'ok', detail: `Copying ${strategy.name} from your MetaTrader` };
-  return { state: 'ok', detail: `${strategy.name}: ${strategy.ticks.toLocaleString()} signals scored${strategy.detail ? ` · ${strategy.detail}` : ''}` };
+  if (config.strategy !== 'none' && config.strategy !== 'ai' && strategy) {
+    parts.push(`${strategy.name}${running && strategy.detail ? `: ${strategy.detail}` : ''}`);
+  }
+  if (on.length > 0) {
+    const ticking = on.filter((e) => e.info.status === 'running');
+    parts.push(running ? `${ticking.length}/${on.length} EA${on.length > 1 ? 's' : ''} running (${on.map((e) => e.info.name).join(', ')})` : `${on.length} EA${on.length > 1 ? 's' : ''} on`);
+  }
+  if (parts.length === 0) return { state: 'off', detail: 'Nothing chosen — pick Burst or the AI, or switch on an EA' };
+  if (!running) return { state: 'off', detail: `${parts.join(' · ')} — stopped` };
+  if (on.some((e) => e.info.status === 'waiting')) return { state: 'wait', detail: parts.join(' · ') };
+  return { state: 'ok', detail: parts.join(' · ') };
 }
 
 /* ------------------------------------------------------------------ */
@@ -172,7 +188,7 @@ function strategyLine(strategy: StrategyInfo | null, running: boolean): { state:
  * light on it reports something measured — nothing here is decoration.
  */
 export function ControlPanel({ session, onOpenSettings }: { session: SessionState; onOpenSettings: () => void }) {
-  const { accounts, quote, quoteAt, candles, stats, strategy, dispatches, positions, config } = useTerminal();
+  const { accounts, quote, quoteAt, candles, stats, strategy, dispatches, positions, config, experts, ai } = useTerminal();
   const [busy, setBusy] = useState<'start' | 'stop' | 'remove' | null>(null);
   const now = useNow();
 
@@ -203,14 +219,16 @@ export function ControlPanel({ session, onOpenSettings }: { session: SessionStat
       : {
           state: 'ok',
           detail: `${
-            config.source !== 'builtin'
-              ? 'Stops set by the EA'
-              : config.strategy === 'burst'
-                ? `TP +${config.burst.takeProfitPrice.toFixed(2)} on every position${config.burst.stopLossPrice ? ` · SL ${config.burst.stopLossPrice.toFixed(2)}` : ' · no stop loss'}`
-                : `SL ${formatMoney(config.stopLossUsd)} · TP ${formatMoney(config.takeProfitUsd)} per leg`
+            config.strategy === 'none'
+              ? 'Stops set by the EAs'
+              : config.strategy === 'ai'
+                ? `AI: stop ${config.ai.slAtr} ATR · target ${config.ai.rrMin}–${config.ai.rrMax}R · ${config.ai.riskPercent}% risk`
+                : config.strategy === 'burst'
+                  ? `TP +${config.burst.takeProfitPrice.toFixed(2)} on every position${config.burst.stopLossPrice ? ` · SL ${config.burst.stopLossPrice.toFixed(2)}` : ' · no stop loss'}`
+                  : `SL ${formatMoney(config.stopLossUsd)} · TP ${formatMoney(config.takeProfitUsd)} per leg`
           }${spread !== null ? ` · spread ${spread.toFixed(2)}` : ''}${master.quoteIntervalSec !== null ? (master.quoteIntervalSec === 0 ? ' · every tick' : ` · quotes each ${master.quoteIntervalSec}s`) : ''}`,
         };
-  const scoring = strategyLine(strategy, running);
+  const scoring = strategyLine(strategy, experts, ai, config, running);
 
   const lastCopy = dispatches.find((d) => d.legs.some((l) => l.role === 'follower'));
   const onlineFollowers = followers.filter((f) => f.connected).length;
@@ -226,10 +244,16 @@ export function ControlPanel({ session, onOpenSettings }: { session: SessionStat
               : `${followers.length} follower(s) connected, ready to copy`,
           };
 
-  const strategyName = strategy?.name ?? 'Sentinal';
+  const deciders = [
+    ...(config.strategy !== 'none' ? [config.strategy === 'ai' ? 'the AI' : strategy?.name ?? 'Sentinal'] : []),
+    ...experts.filter((e) => e.enabled).map((e) => e.info.name),
+  ];
+  const strategyName = deciders.length === 0 ? 'nothing' : deciders.length <= 2 ? deciders.join(' and ') : `${deciders.slice(0, -1).join(', ')} and ${deciders[deciders.length - 1]}`;
   const monitoring = running
-    ? `${strategyName} is monitoring your ${live ? 'live' : demo ? 'demo' : 'paper'} account`
-    : `Start the bot to let ${strategyName} trade`;
+    ? `${strategyName.charAt(0).toUpperCase()}${strategyName.slice(1)} ${deciders.length > 1 ? 'are' : 'is'} monitoring your ${live ? 'live' : demo ? 'demo' : 'paper'} account`
+    : deciders.length === 0
+      ? 'Pick Burst or the AI, or switch on an EA, then start the bot'
+      : `Start the bot to let ${strategyName} trade`;
 
   const start = async () => {
     setBusy('start');
@@ -366,13 +390,14 @@ export function ControlPanel({ session, onOpenSettings }: { session: SessionStat
         </div>
 
         <div className="mt-4">
-          <StrategySwitch compact />
+          <StrategySwitch onManage={onOpenSettings} />
         </div>
 
-        {config.source === 'builtin' && config.strategy === 'burst' && master && (
+        {config.strategy === 'burst' && master && (
           <p className="tabular mt-3 rounded-xl border border-[var(--color-line)] bg-black/30 px-3.5 py-2.5 text-[0.75rem] leading-relaxed text-[var(--color-ink-dim)]">
             Next burst: <span className="font-semibold text-ink">{burstCount} × {config.burst.lot.toFixed(2)}</span>{' '}
-            {config.burst.direction === 'trend' ? 'with the trend' : config.burst.direction.toUpperCase()} · TP +{config.burst.takeProfitPrice.toFixed(2)}
+            {config.burst.direction === 'ai' ? "the AI's way" : config.burst.direction === 'trend' ? 'with the trend' : config.burst.direction.toUpperCase()} · TP +
+            {config.burst.takeProfitPrice.toFixed(2)}
             {config.burst.stopLossPrice ? ` · SL ${config.burst.stopLossPrice.toFixed(2)}` : ' · no stop loss'}
             {burstCount > 0 && (
               <span className="block text-[var(--color-ink-muted)]">
@@ -398,15 +423,19 @@ export function ControlPanel({ session, onOpenSettings }: { session: SessionStat
           </button>
         </div>
 
-        {strategy && (strategy.panel.length > 0 || strategy.comment) && (
-          <details className="mt-4 rounded-xl border border-[var(--color-line)] bg-black/30 px-3.5 py-2.5" open={running}>
-            <summary className="cursor-pointer text-xs font-semibold text-[var(--color-ink-dim)]">{strategy.name} — status panel</summary>
-            <pre className="tabular mt-2 overflow-x-auto whitespace-pre text-[0.6875rem] leading-relaxed text-[var(--color-ink-dim)]">
-              {[...strategy.panel, ...(strategy.comment ? [strategy.comment] : [])].join('\n')}
-            </pre>
-          </details>
-        )}
+        {experts
+          .filter((e) => e.enabled && (e.info.panel.length > 0 || e.info.comment))
+          .map((e) => (
+            <details key={e.id} className="mt-4 rounded-xl border border-[var(--color-line)] bg-black/30 px-3.5 py-2.5" open={running}>
+              <summary className="cursor-pointer text-xs font-semibold text-[var(--color-ink-dim)]">{e.info.name} — status panel</summary>
+              <pre className="tabular mt-2 overflow-x-auto whitespace-pre text-[0.6875rem] leading-relaxed text-[var(--color-ink-dim)]">
+                {[...e.info.panel, ...(e.info.comment ? [e.info.comment] : [])].join('\n')}
+              </pre>
+            </details>
+          ))}
       </section>
+
+      <AiPanel onOpenSettings={onOpenSettings} />
 
       {followers.length > 0 && (
         <section className="card p-5">

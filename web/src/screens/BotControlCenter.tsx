@@ -39,7 +39,7 @@ function RecoveryRow({ task }: { task: RecoveryTask }) {
 }
 
 export function BotControlCenter() {
-  const { accounts, positions, config, stats, recoveries, logs, strategy } = useTerminal();
+  const { accounts, positions, config, stats, recoveries, logs, strategy, experts } = useTerminal();
   const [tab, setTab] = useState<string>('all');
   const [busy, setBusy] = useState(false);
 
@@ -67,7 +67,7 @@ export function BotControlCenter() {
     <div className="space-y-3">
       <Card
         title="Execution engine"
-        subtitle={`${strategy?.name ?? config.strategy} · ${config.source === 'builtin' ? config.execution : config.source === 'mql5' ? 'MQL5 expert' : 'mirrored from MT5'} · ${config.symbol}`}
+        subtitle={`${config.strategy === 'none' ? 'EAs only' : strategy?.name ?? config.strategy}${experts.some((e) => e.enabled) ? ` + ${experts.filter((e) => e.enabled).length} EA(s)` : ''} · ${config.execution} · ${config.symbol}`}
         actions={
           <div className="flex gap-2">
             <button className="btn btn-primary px-3 py-1.5 text-xs" disabled={busy || stats?.running} onClick={() => void control('start')}>

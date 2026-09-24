@@ -1,3 +1,4 @@
+import { DEFAULT_AI_CONFIG } from './ai.js';
 import type { BotConfig, CopySettings } from './types.js';
 
 /**
@@ -12,9 +13,6 @@ import type { BotConfig, CopySettings } from './types.js';
 export const DEFAULT_BOT_CONFIG: BotConfig = {
   enabled: false,
   symbol: 'XAUUSD',
-  source: 'builtin',
-  expertTimeframe: 1,
-  expertInputs: {},
   // Every order goes to the master and all followers in the same instant.
   dispatch: { mode: 'simultaneous', cancelOrphans: true },
   execution: 'intrabar',
@@ -30,13 +28,16 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
     maxPositions: 50,
     takeProfitPrice: 5,
     stopLossPrice: null,
-    direction: 'trend',
+    // The AI picks each burst's direction and holds a burst back when it
+    // expects a turn; before it has warmed up the burst follows the trend.
+    direction: 'ai',
     trendTimeframeMin: 1,
     trendFastPeriod: 20,
     trendSlowPeriod: 50,
     reentryDelayMs: 0,
     comment: 'Sentinal',
   },
+  ai: { ...DEFAULT_AI_CONFIG, claude: { ...DEFAULT_AI_CONFIG.claude } },
   // Adaptive by default: each leg risks 0.25% of equity, with the stop a $2
   // move in gold and the target half of it, matching the shipped 2:1 profile.
   sizing: 'risk-percent',

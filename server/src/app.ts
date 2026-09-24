@@ -3,9 +3,10 @@ import path from 'node:path';
 import MetaApi from 'metaapi.cloud-sdk/esm-node';
 import {
   MetaApiGateway,
+  addExperts,
   attachMetaApi,
+  createClaudeReviewer,
   createRuntime,
-  loadStrategy,
   seedDemoAccounts,
   type MetaApiClient,
   type MetaApiLink,
@@ -67,6 +68,7 @@ export function createServerContext(): ServerContext {
   const state = new StateDir(config.stateDir);
   const storage = state.keyValueStore();
   const live = Boolean(config.metaApi.token);
+  const reviewer = config.anthropicApiKey ? createClaudeReviewer(config.anthropicApiKey) : null;
 
   const runtime = createRuntime({
     seedPrice: live ? 0 : config.seedPrice,
@@ -75,6 +77,9 @@ export function createServerContext(): ServerContext {
     historyBars: config.historyBars,
     source: live ? 'external' : 'simulated',
     storage,
+    library: state.expertLibrary(),
+    aiStore: state.aiStore(),
+    aiReviewer: config.anthropicApiKey ? () => reviewer : undefined,
     banner: live ? 'Sentinal execution server — connecting to MetaApi' : 'Sentinal execution server — demo market (no METAAPI_TOKEN set)',
   });
 
@@ -99,20 +104,25 @@ export function createServerContext(): ServerContext {
   let retryTimer: NodeJS.Timeout | null = null;
 
   const restore = async (): Promise<void> => {
-    const saved = state.botConfig();
+    const saved = state.botConfig() as (Partial<BotConfig> & { source?: string; expertInputs?: Record<string, string | number | boolean>; expertTimeframe?: number }) | null;
     if (saved) {
-      const { enabled: _enabled, symbol: _symbol, source: _source, ...rest } = saved;
+      // Settings from before the EA library carried one EA's inputs and a source; they move to the EA itself.
+      const { enabled: _enabled, symbol: _symbol, source: _source, expertInputs: _inputs, expertTimeframe: _tf, ...rest } = saved;
       runtime.bot.updateConfig({ ...rest, enabled: false });
     }
-    const uploaded = state.strategy();
-    const files = uploaded ? (uploaded.active ? uploaded.files : null) : config.strategyFile ? [readStrategyFromDisk(config.strategyFile)] : null;
-    if (!files) return;
     try {
-      const outcome = await loadStrategy(runtime, files);
-      if (outcome.kind === 'mql5' && !outcome.result.ok) return;
-      if (saved?.expertInputs) runtime.bot.updateConfig({ expertInputs: saved.expertInputs, expertTimeframe: saved.expertTimeframe ?? 1 });
+      await runtime.experts.restore();
+      const legacy = state.takeLegacyStrategy();
+      if (legacy && runtime.experts.size === 0) {
+        await addExperts(runtime, legacy.files, { enabled: legacy.active, inputs: saved?.expertInputs ?? {}, timeframe: saved?.expertTimeframe ?? 1 });
+        // It was the strategy in use: it trades alone, as it did.
+        if (legacy.active) runtime.bot.updateConfig({ strategy: 'none' });
+      }
+      if (runtime.experts.size === 0 && config.strategyFile) {
+        await addExperts(runtime, [readStrategyFromDisk(config.strategyFile)]);
+      }
     } catch (err) {
-      runtime.journal.write('warn', null, `The saved strategy could not be restored: ${err instanceof Error ? err.message : String(err)}`);
+      runtime.journal.write('warn', null, `The EA library could not be restored: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 

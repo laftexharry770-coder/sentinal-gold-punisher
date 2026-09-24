@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { burstSize, formatMoney, getSymbolSpec, riskSizedLeg, type BotConfig } from '@sentinal/shared';
 import { api } from '../api';
+import { AiCard } from '../components/AiSettings';
 import { StrategyCard } from '../components/StrategyPanel';
 import { toast } from '../components/Toast';
 import { Card, Chip, NumberField, Segmented, Toggle } from '../components/ui';
 import { useTerminal } from '../store';
 
 type Draft = BotConfig;
+
+/** Equity of the master, or of the first account when none is marked master. */
+function masterEquity(accounts: { equity: number }[]): number {
+  return accounts[0]?.equity ?? 0;
+}
 
 /** What the current account would trade under these settings, right now. */
 function SizingPreview({ draft, equity }: { draft: Draft; equity: number }) {
@@ -165,6 +171,7 @@ function BurstCard({ draft, onChange, balance }: { draft: Draft['burst']; onChan
           value={draft.direction}
           onChange={(v) => set('direction', v)}
           options={[
+            { value: 'ai', label: 'AI' },
             { value: 'trend', label: 'Follow trend' },
             { value: 'buy', label: 'Buy only' },
             { value: 'sell', label: 'Sell only' },
@@ -181,7 +188,15 @@ function BurstCard({ draft, onChange, balance }: { draft: Draft['burst']; onChan
         />
       </div>
 
-      {draft.direction === 'trend' && (
+      {draft.direction === 'ai' && (
+        <p className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
+          Each burst goes the way the AI calls it when it is sure enough; when it is unsure the burst follows the trend below; and it holds
+          the burst back when it expects the market to turn against the trend or reads it as dangerous — a burst has no stop, so staying out
+          is the AI's most useful call.
+        </p>
+      )}
+
+      {(draft.direction === 'trend' || draft.direction === 'ai') && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
             <label className="label" htmlFor="burst-tf">
@@ -223,7 +238,7 @@ function BurstCard({ draft, onChange, balance }: { draft: Draft['burst']; onChan
 }
 
 export function TradeSettings() {
-  const { config, stats, portfolio, strategy, accounts } = useTerminal();
+  const { config, stats, portfolio, accounts } = useTerminal();
   const [draft, setDraft] = useState<Draft>(config);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -236,11 +251,12 @@ export function TradeSettings() {
   }, [config, touched]);
 
   const dirty = useMemo(() => {
-    const strip = ({ enabled: _e, symbol: _s, source: _src, expertInputs: _i, expertTimeframe: _t, dispatch: _d, ...rest }: Draft) => rest;
+    const strip = ({ enabled: _e, symbol: _s, dispatch: _d, ...rest }: Draft) => rest;
     return JSON.stringify(strip(draft)) !== JSON.stringify(strip(config));
   }, [draft, config]);
-  const builtin = config.source === 'builtin';
-  const burst = builtin && draft.strategy === 'burst';
+  const builtin = config.strategy !== 'none';
+  const burst = draft.strategy === 'burst';
+  const aiModel = draft.strategy === 'ai';
   const masterBalance = accounts.find((a) => a.role === 'master')?.balance ?? accounts[0]?.balance ?? 0;
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
@@ -260,7 +276,7 @@ export function TradeSettings() {
     setError(null);
     try {
       // The strategy card and the session own these; a stale draft must not undo them.
-      const { enabled: _enabled, symbol: _symbol, source: _source, expertInputs: _inputs, expertTimeframe: _tf, dispatch: _dispatch, ...patch } = draft;
+      const { enabled: _enabled, symbol: _symbol, dispatch: _dispatch, ...patch } = draft;
       await api.saveBotConfig(patch);
       setSaved(true);
       setTouched(false);
@@ -282,29 +298,36 @@ export function TradeSettings() {
 
   return (
     <div className="space-y-3 pb-4">
-      <StrategyCard strategy={strategy} config={config} />
+      <StrategyCard />
 
-      {builtin && draft.strategy === 'burst' && (
-        <BurstCard draft={draft.burst} balance={masterBalance} onChange={(next) => set('burst', next)} />
-      )}
+      {burst && <BurstCard draft={draft.burst} balance={masterBalance} onChange={(next) => set('burst', next)} />}
+
+      <AiCard
+        draft={draft.ai}
+        onChange={(next) => set('ai', next)}
+        dirty={JSON.stringify(draft.ai) !== JSON.stringify(config.ai)}
+        saving={saving}
+        onSave={() => void save()}
+        equity={accounts.find((a) => a.role === 'master')?.equity ?? masterEquity(accounts)}
+      />
 
       <DispatchCard />
 
       {!builtin && (
         <p className="rounded-xl border border-[var(--color-flame)]/30 bg-[var(--color-flame)]/[0.06] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
-          {config.source === 'mql5' ? 'Your EA' : 'The EA in MetaTrader'} decides entries, lot sizes, stops and exits. The built-in model
-          settings below are kept for when you switch back; <span className="text-ink">Session guards</span> still apply to the EA — when a
-          daily limit trips, its orders are refused the way MetaTrader refuses them with Algo Trading off.
+          The built-in model is off: your EAs decide entries, lot sizes, stops and exits. The settings below are kept for when you switch one
+          back on; <span className="text-ink">Session guards</span> still apply to the EAs — when a daily limit trips, their orders are refused
+          the way MetaTrader refuses them with Algo Trading off.
         </p>
       )}
 
-      {burst && (
+      {(burst || aiModel) && (
         <p className="px-1 text-xs leading-relaxed text-[var(--color-ink-muted)]">
-          Burst sizes and closes its own positions; the model settings below apply to the other built-in models (choose one there to use it).
+          {burst ? 'Burst' : 'The AI'} sizes and closes its own positions; the model settings below apply to the other built-in models (choose one there to use it).
         </p>
       )}
 
-      <div className={builtin && !burst ? 'space-y-3' : 'space-y-3 opacity-60'}>
+      <div className={builtin && !burst && !aiModel ? 'space-y-3' : 'space-y-3 opacity-60'}>
       <Card
         title="Built-in model"
         subtitle={`${config.symbol} · dollar-based risk`}
@@ -330,6 +353,8 @@ export function TradeSettings() {
             onChange={(e) => set('strategy', e.target.value as Draft['strategy'])}
           >
             <option value="burst">Burst — like the video</option>
+            <option value="ai">AI — learns, then decides</option>
+            <option value="none">Off — EAs only</option>
             <option value="adaptive-scalp">Adaptive scalp (trend pullback)</option>
             <option value="momentum">Momentum breakout</option>
             <option value="mean-reversion">Mean reversion</option>

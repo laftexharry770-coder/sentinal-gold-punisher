@@ -134,6 +134,36 @@ export function Toggle({
   );
 }
 
+/** The bare on/off switch of Toggle, for rows that carry their own label. */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  /** Read by assistive tech; the row shows its own. */
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors disabled:opacity-50 ${
+        checked ? 'border-[var(--color-flame)]/80 bg-[var(--color-flame)]/85' : 'border-[var(--color-line)] bg-[#20252c]'
+      }`}
+    >
+      <span className="absolute rounded-full bg-white transition-all" style={{ height: 18, width: 18, left: checked ? 22 : 2, top: 2 }} />
+    </button>
+  );
+}
+
 export function NumberField({
   label,
   value,

@@ -3,33 +3,40 @@ import {
   MetaApiAccount,
   MetaApiGateway,
   addAccount,
+  addExperts,
   addMetaApiFollower,
   attachMetaApi,
   closeAll,
   closePosition,
   configureExpert,
+  createClaudeReviewer,
   createRuntime,
-  loadStrategy,
   placeOrder,
   removeAccount,
+  removeExpert,
   seedDemoAccounts,
+  setExpertEnabled,
   startBot,
   stopBot,
   updateAccount,
   updateBotConfig,
   useBuiltinStrategy,
+  type AiReviewClient,
   type MetaApiLink,
   type Runtime,
+  type RuntimeOptions,
   type StrategyFile,
 } from '@sentinal/engine';
 import type {
   AccountState,
+  AiStatus,
   BotConfig,
   Candle,
   ClosedTrade,
   CopySettings,
   DispatchReport,
   EquityPoint,
+  ExpertSlot,
   LogEntry,
   PendingOrder,
   RecoveryTask,
@@ -37,15 +44,21 @@ import type {
   StrategyInfo,
   Tick,
 } from '@sentinal/shared';
+import { ANGEL_BOT } from '../bundledStrategies';
+import { browserLibraryStore } from './library';
 import { createMetaApiClient, explainMetaApiError } from './metaapiSdk';
 import {
+  angelSeeded,
+  loadAiModel,
   loadBotConfig,
+  loadClaudeKey,
   loadMetaApiCredentials,
-  loadStrategyFiles,
+  markAngelSeeded,
+  saveAiModel,
   saveBotConfig,
+  saveClaudeKey,
   saveMetaApiCredentials,
-  saveStrategyFiles,
-  setStrategyActive,
+  takeLegacyStrategy,
 } from './persist';
 import { LOCKED, type ConnectInput, type SessionState } from './session';
 import type { BotView, NewAccountPayload, OrderPayload, Subscription, TerminalBackend } from './types';
@@ -66,6 +79,21 @@ export function createLocalBackend(): TerminalBackend {
   let link: MetaApiLink | null = null;
   /** Gateways opened for listing accounts before sign-in, by token. */
   const gateways = new Map<string, Promise<MetaApiGateway>>();
+
+  /** Claude, built once per key — the key never leaves this browser except to Anthropic. */
+  let reviewer: { key: string; client: AiReviewClient } | null = null;
+  const reviewerNow = (): AiReviewClient | null => {
+    const key = loadClaudeKey();
+    if (!key) return null;
+    if (reviewer?.key !== key) reviewer = { key, client: createClaudeReviewer(key, { browser: true }) };
+    return reviewer.client;
+  };
+  /** What every runtime in this tab keeps between visits: the EA library, the AI's model, Claude. */
+  const persistence = (): Pick<RuntimeOptions, 'library' | 'aiStore' | 'aiReviewer'> => ({
+    library: browserLibraryStore(),
+    aiStore: { load: loadAiModel, save: saveAiModel },
+    aiReviewer: reviewerNow,
+  });
 
   const sessionListeners = new Set<(state: SessionState) => void>();
   const streamListeners = new Set<Subscription>();
@@ -144,22 +172,37 @@ export function createLocalBackend(): TerminalBackend {
     });
     rt.bot.on('recoveries', (payload: unknown) => emit({ type: 'recoveries', payload: payload as RecoveryTask[] }));
     rt.bot.on('strategy', (payload: unknown) => emit({ type: 'strategy', payload: payload as StrategyInfo }));
+    rt.bot.on('experts', (payload: unknown) => emit({ type: 'experts', payload: payload as ExpertSlot[] }));
+    rt.bot.on('ai', (payload: unknown) => emit({ type: 'ai', payload: payload as AiStatus }));
     rt.copier.on('dispatch', (payload: unknown) => emit({ type: 'dispatch', payload: payload as DispatchReport }));
   };
 
-  /** Settings and the strategy from the last visit, so a reload picks up where it left off. */
-  const restore = async (rt: Runtime): Promise<void> => {
-    const config = loadBotConfig();
-    if (config) rt.bot.updateConfig({ ...config, enabled: false });
-    const saved = loadStrategyFiles();
-    if (!saved || !saved.active) return;
+  /**
+   * Settings and the EA library from the last visit, so a reload picks up
+   * where it left off. The settings are read before the runtime exists: the
+   * broker's first events save the defaults, which must not win over them.
+   */
+  const restore = async (rt: Runtime, config: ReturnType<typeof loadBotConfig>): Promise<void> => {
+    if (config) {
+      const { source: _source, expertInputs: _inputs, expertTimeframe: _timeframe, ...rest } = config;
+      rt.bot.updateConfig({ ...rest, enabled: false });
+    }
     try {
-      const outcome = await loadStrategy(rt, saved.files);
-      if (outcome.kind === 'mql5' && !outcome.result.ok) saveStrategyFiles(null);
-      // Inputs saved with the settings belong to this EA; loading reset them.
-      if (config?.expertInputs) rt.bot.updateConfig({ expertInputs: config.expertInputs, expertTimeframe: config.expertTimeframe ?? 1 });
+      await rt.experts.restore();
+      // The one EA an earlier version kept moves into the library, with its inputs.
+      const legacy = takeLegacyStrategy();
+      if (legacy && rt.experts.size === 0) {
+        await addExperts(rt, legacy.files, { enabled: legacy.active, inputs: config?.expertInputs ?? {}, timeframe: config?.expertTimeframe ?? 1 });
+        // It was the strategy in use: it trades alone, as it did.
+        if (legacy.active && config?.source && config.source !== 'builtin') rt.bot.updateConfig({ strategy: 'none' });
+      }
+      // Angel Bot ships with the terminal: in the library once, switched off, until removed.
+      if (!angelSeeded()) {
+        if (!rt.experts.idOf(ANGEL_BOT.name)) await addExperts(rt, [ANGEL_BOT], { enabled: false, bundled: true });
+        markAngelSeeded();
+      }
     } catch (err) {
-      rt.journal.write('warn', null, `The saved strategy could not be restored: ${err instanceof Error ? err.message : String(err)}`);
+      rt.journal.write('warn', null, `The EA library could not be restored: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -182,6 +225,7 @@ export function createLocalBackend(): TerminalBackend {
 
   const connectBroker = async (input: ConnectInput): Promise<void> => {
     teardown();
+    const savedConfig = loadBotConfig();
     const token = input.token.trim();
     setSession({ status: 'connecting', error: null, step: 'Opening MetaApi' });
 
@@ -195,6 +239,7 @@ export function createLocalBackend(): TerminalBackend {
         seed: null,
         historyBars: 240,
         source: 'external',
+        ...persistence(),
       });
       attach(rt);
       runtime = rt;
@@ -222,7 +267,7 @@ export function createLocalBackend(): TerminalBackend {
         `Connected to ${state.broker} · ${state.login} (${state.accountType}) — live ${link.master.symbol} feed through MetaApi`,
       );
 
-      await restore(rt);
+      await restore(rt, savedConfig);
       emit({ type: 'snapshot', payload: rt.snapshot() });
 
       saveMetaApiCredentials(
@@ -260,6 +305,7 @@ export function createLocalBackend(): TerminalBackend {
 
   const startDemo = async (): Promise<void> => {
     teardown();
+    const savedConfig = loadBotConfig();
     const rt = createRuntime({
       seedPrice: 3312.4,
       tickIntervalMs: 400,
@@ -267,12 +313,13 @@ export function createLocalBackend(): TerminalBackend {
       historyBars: 240,
       source: 'simulated',
       banner: 'Demo mode — simulated XAUUSD feed, no broker connected',
+      ...persistence(),
     });
     attach(rt);
     seedDemoAccounts(rt);
     rt.start();
     runtime = rt;
-    await restore(rt);
+    await restore(rt, savedConfig);
     emit({ type: 'snapshot', payload: rt.snapshot() });
     setSession({ status: 'demo' });
   };
@@ -374,51 +421,38 @@ export function createLocalBackend(): TerminalBackend {
     startBot: async () => startBot(requireRuntime()),
     stopBot: async (closePositions = false) => stopBot(requireRuntime(), closePositions),
 
-    loadStrategy: async (files: StrategyFile[]) => {
-      const rt = requireRuntime();
-      const outcome = await loadStrategy(rt, files);
-      const ok = outcome.kind === 'ex5' || outcome.result.ok;
-      if (ok && !saveStrategyFiles(files)) {
-        rt.journal.write('warn', null, 'This browser would not store the strategy files, so it will need uploading again next visit.');
-      }
-      return outcome;
+    useBuiltinStrategy: async (strategy) => useBuiltinStrategy(requireRuntime(), strategy),
+
+    addExperts: async (files: StrategyFile[], options = {}) => addExperts(requireRuntime(), files, options),
+
+    setExpertEnabled: async (id, enabled) => {
+      await setExpertEnabled(requireRuntime(), id, enabled);
     },
 
-    useBuiltinStrategy: async (strategy) => {
-      // The uploaded EA is kept, so switching back needs no second upload.
-      setStrategyActive(false);
-      return useBuiltinStrategy(requireRuntime(), strategy);
+    configureExpert: async (id, patch) => {
+      await configureExpert(requireRuntime(), id, patch);
     },
 
-    savedStrategy: async () => {
-      const saved = loadStrategyFiles();
-      if (!saved) return null;
-      const main = saved.files.find((f) => /\.(mq5|ex5)$/i.test(f.name));
-      if (!main) return null;
-      return { fileName: main.name, kind: /\.ex5$/i.test(main.name) ? 'ex5' : 'mql5', active: saved.active, savedAt: saved.savedAt };
+    removeExpert: async (id) => {
+      await removeExpert(requireRuntime(), id);
     },
 
-    useSavedStrategy: async () => {
-      const rt = requireRuntime();
-      const saved = loadStrategyFiles();
-      if (!saved) throw new Error('No uploaded EA is saved — upload the .mq5 or .ex5 first.');
-      const outcome = await loadStrategy(rt, saved.files);
-      if (outcome.kind === 'ex5' || outcome.result.ok) {
-        setStrategyActive(true);
-        const config = loadBotConfig();
-        if (config?.expertInputs && outcome.kind === 'mql5') {
-          rt.bot.updateConfig({ expertInputs: config.expertInputs, expertTimeframe: config.expertTimeframe ?? rt.bot.config.expertTimeframe });
-        }
-      }
-      return outcome;
-    },
+    /* -------------------------------- AI ------------------------------- */
 
-    forgetSavedStrategy: async () => {
-      const saved = loadStrategyFiles();
-      if (saved?.active && runtime) useBuiltinStrategy(runtime);
-      saveStrategyFiles(null);
+    reviewAi: async () => requireRuntime().ai.review('request'),
+    approveAiSuggestion: async () => {
+      requireRuntime().ai.approvePending();
     },
-
-    configureExpert: async (patch) => configureExpert(requireRuntime(), patch),
+    dismissAiSuggestion: async () => {
+      requireRuntime().ai.dismissPending();
+    },
+    resumeAi: async () => {
+      requireRuntime().ai.resume();
+    },
+    claudeKey: () => ({ where: 'browser', configured: loadClaudeKey() !== null }),
+    setClaudeKey: async (key) => {
+      saveClaudeKey(key);
+      runtime?.ai.publish();
+    },
   };
 }

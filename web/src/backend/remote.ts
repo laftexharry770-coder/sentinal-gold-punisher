@@ -1,12 +1,11 @@
-import type { AccountState, BotConfig, ClosedTrade, CopySettings, Position, ServerMessage } from '@sentinal/shared';
+import type { AccountState, AiReview, BotConfig, ClosedTrade, CopySettings, Position, ServerMessage } from '@sentinal/shared';
 import type { BrokerIdentity, SessionState } from './session';
 import type {
   BotView,
   MetaApiAccountSummary,
   NewAccountPayload,
   OrderPayload,
-  SavedStrategyInfo,
-  StrategyLoadOutcome,
+  AddedExpert,
   Subscription,
   TerminalBackend,
 } from './types';
@@ -74,6 +73,8 @@ const post = <T>(path: string, body?: unknown) =>
  * is never gated behind a sign-in screen.
  */
 export function createRemoteBackend(): TerminalBackend {
+  /** Whether the server has ANTHROPIC_API_KEY, as its AI status reports. */
+  let claudeConfigured = false;
   let session: SessionState = {
     status: 'live',
     broker: { login: '', server: 'execution server', broker: 'Sentinal', currency: 'USD', accountType: 'sim', platform: 'sim', metaApiId: null },
@@ -125,7 +126,10 @@ export function createRemoteBackend(): TerminalBackend {
         };
         socket.onmessage = (event) => {
           try {
-            onMessage(JSON.parse(event.data as string) as ServerMessage);
+            const message = JSON.parse(event.data as string) as ServerMessage;
+            if (message.type === 'ai') claudeConfigured = message.payload.claude.configured;
+            if (message.type === 'snapshot') claudeConfigured = message.payload.ai?.claude.configured ?? false;
+            onMessage(message);
           } catch {
             /* malformed frame — drop it rather than tearing the socket down */
           }
@@ -170,13 +174,32 @@ export function createRemoteBackend(): TerminalBackend {
       call<BotView>('/bot/config', { method: 'PATCH', body: JSON.stringify(patch) }),
     startBot: () => post<BotView>('/bot/start'),
     stopBot: (closePositions = false) => post<BotView>('/bot/stop', { closePositions }),
-    loadStrategy: (files) => post<StrategyLoadOutcome>('/strategy', { files }),
     useBuiltinStrategy: (strategy) => post<BotView>('/strategy/builtin', { strategy }),
-    savedStrategy: () => call<SavedStrategyInfo | null>('/strategy/saved'),
-    useSavedStrategy: () => post<StrategyLoadOutcome>('/strategy/saved/use'),
-    forgetSavedStrategy: async () => {
-      await call('/strategy/saved', { method: 'DELETE' });
+    addExperts: (files, options = {}) => post<AddedExpert[]>('/experts', { files, ...options }),
+    setExpertEnabled: async (id, enabled) => {
+      await call(`/experts/${id}`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
     },
-    configureExpert: (patch) => call<BotView>('/strategy/expert', { method: 'PATCH', body: JSON.stringify(patch) }),
+    configureExpert: async (id, patch) => {
+      await call(`/experts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+    },
+    removeExpert: async (id) => {
+      await call(`/experts/${id}`, { method: 'DELETE' });
+    },
+
+    reviewAi: () => post<AiReview>('/ai/review'),
+    approveAiSuggestion: async () => {
+      await post('/ai/pending/approve');
+    },
+    dismissAiSuggestion: async () => {
+      await post('/ai/pending/dismiss');
+    },
+    resumeAi: async () => {
+      await post('/ai/resume');
+    },
+    // The server keeps its own key, set as ANTHROPIC_API_KEY in its environment.
+    claudeKey: () => ({ where: 'server', configured: claudeConfigured }),
+    setClaudeKey: async () => {
+      throw new Error('This terminal runs on the execution server: set ANTHROPIC_API_KEY in its environment.');
+    },
   };
 }

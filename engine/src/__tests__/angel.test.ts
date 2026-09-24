@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { compileMql5 } from '@sentinal/mql5';
-import { loadStrategy, startBot, stopBot, updateBotConfig } from '../commands.js';
+import { startBot, stopBot, updateBotConfig } from '../commands.js';
+import { eaInfo, loadEa } from './eaHelpers.js';
 import { createRuntime } from '../runtime.js';
 
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -32,12 +33,12 @@ describe('Angel Bot', () => {
       leverage: 2000,
       copy: { enabled: true, masterId: master.id, sizing: 'multiplier', multiplier: 1, maxSlippage: 0 },
     });
-    const loaded = await loadStrategy(runtime, [{ name: 'Angel_Bot.mq5', content: source }]);
+    const loaded = (await loadEa(runtime, [{ name: 'Angel_Bot.mq5', content: source }])).outcome;
     expect(loaded.kind === 'mql5' && loaded.result.ok).toBe(true);
-    updateBotConfig(runtime, { expertTimeframe: 1, expertInputs: {}, maxDailyLossUsd: null, maxDailyTrades: null });
+    updateBotConfig(runtime, { maxDailyLossUsd: null, maxDailyTrades: null });
     startBot(runtime);
-    for (let i = 0; i < 100 && runtime.strategyInfo().status !== 'running'; i += 1) await settle(5);
-    expect(runtime.strategyInfo().status).toBe('running');
+    for (let i = 0; i < 100 && eaInfo(runtime).status !== 'running'; i += 1) await settle(5);
+    expect(eaInfo(runtime).status).toBe('running');
 
     let price = runtime.feed.quote?.bid ?? 4350;
     let time = Date.now();
@@ -49,7 +50,7 @@ describe('Angel Bot', () => {
       price += (seed / 4294967296 - 0.49) * 0.12;
       time += 700;
       runtime.feed.pushTick({ symbol: 'XAUUSD', bid: +price.toFixed(2), ask: +(price + 0.12).toFixed(2), time });
-      await runtime.expert.idle();
+      await runtime.experts.idle();
       const orders = master.listOrders();
       if (orders.length === 2 && orders.some((o) => o.type === 'buy-stop') && orders.some((o) => o.type === 'sell-stop')) {
         sawBracket = true;
@@ -86,28 +87,28 @@ describe('Angel Bot', () => {
       [...h].sort(byTime).map((t) => `${t.side} ${t.openPrice} → ${t.closePrice} ${t.reason}`);
     expect(legs(follower.history)).toEqual(legs(master.history));
     expect(follower.balance).toBe(master.balance);
-    expect(runtime.strategyInfo().comment).toMatch(/--- ANGEL BOT ---/);
+    expect(eaInfo(runtime).comment).toMatch(/--- ANGEL BOT ---/);
     expect(runtime.copier.recent().some((r) => r.action === 'pending')).toBe(true);
 
     stopBot(runtime);
     await settle(20);
-    expect(runtime.strategyInfo().status).toBe('stopped');
+    expect(eaInfo(runtime).status).toBe('stopped');
   });
 
   it('closes its own positions when the day locks, without a runtime error', async () => {
     const runtime = createRuntime({ seedPrice: 4350, tickIntervalMs: 50, seed: 5, historyBars: 400 });
     const master = runtime.accounts.add({ name: 'Master', login: '1', server: 'sim', role: 'master', initialBalance: 1000, leverage: 2000 });
-    await loadStrategy(runtime, [{ name: 'Angel_Bot.mq5', content: source }]);
+    await loadEa(runtime, [{ name: 'Angel_Bot.mq5', content: source }], {
+      inputs: { InpDailyProfitTarget: 0.5, InpDailyLossLimit: 0.5, InpPositionsPerEntry: 3 },
+    });
     // A day target and loss limit of $0.50: the first result locks the day and
     // the EA closes whatever is still open through its own ClosePosition.
     updateBotConfig(runtime, {
-      expertTimeframe: 1,
-      expertInputs: { InpDailyProfitTarget: 0.5, InpDailyLossLimit: 0.5, InpPositionsPerEntry: 3 },
       maxDailyLossUsd: null,
       maxDailyTrades: null,
     });
     startBot(runtime);
-    for (let i = 0; i < 100 && runtime.strategyInfo().status !== 'running'; i += 1) await settle(5);
+    for (let i = 0; i < 100 && eaInfo(runtime).status !== 'running'; i += 1) await settle(5);
 
     let price = runtime.feed.quote?.bid ?? 4350;
     let time = Date.now();
@@ -119,13 +120,13 @@ describe('Angel Bot', () => {
       price += (seed / 4294967296 - 0.49) * 0.12;
       time += 700;
       runtime.feed.pushTick({ symbol: 'XAUUSD', bid: +price.toFixed(2), ask: +(price + 0.12).toFixed(2), time });
-      await runtime.expert.idle();
+      await runtime.experts.idle();
     }
     await settle(20);
     expect(runtime.journal.list().filter((l) => l.level === 'error').map((l) => l.message)).toEqual([]);
-    expect(runtime.strategyInfo().status).toBe('running');
+    expect(eaInfo(runtime).status).toBe('running');
     expect(closedByEa()).toBe(true);
-    expect(runtime.strategyInfo().comment).toMatch(/LOCKED/);
+    expect(eaInfo(runtime).comment).toMatch(/LOCKED/);
     expect(master.listPositions()).toHaveLength(0);
     stopBot(runtime);
     await settle(20);

@@ -9,7 +9,7 @@ import {
   type Position,
   type Side,
 } from '@sentinal/shared';
-import { compileMql5, inspectEx5, type CompileResult, type Ex5Info } from '@sentinal/mql5';
+import type { AddedExpert, StrategyFile } from './engine/bank.js';
 import type { NewAccountInput } from './broker/manager.js';
 import type { Runtime } from './runtime.js';
 
@@ -186,105 +186,63 @@ export function stopBot(runtime: Runtime, closePositions = false): BotView {
 }
 
 /* ------------------------------------------------------------------ */
-/* Strategy                                                            */
+/* Strategy: the built-in model and the EA library                      */
 /* ------------------------------------------------------------------ */
 
-export interface StrategyFile {
-  name: string;
-  /** Text for .mq5/.mqh; base64 for .ex5. */
-  content: string;
-  encoding?: 'text' | 'base64';
-}
-
-export type LoadStrategyResult =
-  | { kind: 'mql5'; result: CompileResult }
-  | { kind: 'ex5'; info: Ex5Info };
-
-function decodeBase64(text: string): Uint8Array {
-  const binary = globalThis.atob ? globalThis.atob(text) : '';
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
+export type { AddedExpert, LoadStrategyResult, StrategyFile } from './engine/bank.js';
 
 /**
- * Makes uploaded files the strategy.
- *
- * An .mq5 (with any .mqh headers it includes) is compiled and runs in the
- * engine. An .ex5 cannot run anywhere but MetaTrader, so it switches the
- * terminal to mirror mode: the EA trades the master inside MT5 and every
- * position it opens is copied to the followers. Either way a running bot is
- * disarmed first — a new strategy never takes over a live book mid-flight.
+ * Adds uploaded files to the EA library. Each .mq5 (with any .mqh headers
+ * it includes) becomes an EA of its own and each .ex5 a mirrored one;
+ * several can be added at once, and any number kept. New EAs are switched
+ * on unless asked otherwise, and start at once if the bot is running.
  */
-export async function loadStrategy(runtime: Runtime, files: StrategyFile[]): Promise<LoadStrategyResult> {
-  const ex5 = files.find((f) => /\.ex5$/i.test(f.name));
-  const mq5 = files.find((f) => /\.mq5$/i.test(f.name));
-  if (!ex5 && !mq5) throw new CommandError('Choose an .mq5 or .ex5 file (headers alone are not a strategy).');
-
-  if (runtime.bot.stats().running) runtime.bot.stop();
-
-  if (mq5) {
-    const headers = files.filter((f) => /\.mqh$/i.test(f.name)).map((f) => ({ name: f.name, source: f.content }));
-    const result = compileMql5(mq5.content, mq5.name, { files: headers });
-    if (!result.ok) {
-      const first = result.diagnostics.find((d) => d.severity === 'error');
-      runtime.journal.write('error', null, `${mq5.name} did not compile${first ? ` — line ${first.line}: ${first.message}` : ''}`);
-      return { kind: 'mql5', result };
-    }
-    await runtime.expert.load(result, mq5.name);
-    runtime.setMirror(null);
-    runtime.bot.updateConfig({ source: 'mql5', expertInputs: {} });
-    const warnings = result.diagnostics.filter((d) => d.severity === 'warning').length;
-    runtime.journal.write(
-      'success',
-      null,
-      `Strategy loaded: ${result.name} — ${result.inputs.length} input(s)${warnings ? `, ${warnings} warning(s)` : ''}. Arm the bot to run it.`,
-    );
-    return { kind: 'mql5', result };
+export async function addExperts(
+  runtime: Runtime,
+  files: StrategyFile[],
+  options: { enabled?: boolean; inputs?: Record<string, string | number | boolean>; timeframe?: number; bundled?: boolean } = {},
+): Promise<AddedExpert[]> {
+  if (!files.some((f) => /\.(mq5|ex5)$/i.test(f.name))) {
+    throw new CommandError('Choose one or more .mq5 or .ex5 files (headers alone are not an EA).');
   }
-
-  const info = await inspectEx5(ex5!.name, ex5!.encoding === 'base64' ? decodeBase64(ex5!.content) : new TextEncoder().encode(ex5!.content));
-  if (!info.looksCompiled) {
-    throw new CommandError(`${info.name} is text, not a compiled expert — if it is MQL5 source, save it as .mq5 and upload that.`);
+  const added = await runtime.experts.add(files, options);
+  const master = runtime.accounts.primary();
+  if (runtime.bot.stats().running && master) {
+    for (const a of added) if (a.id && (options.enabled ?? true)) await runtime.experts.setEnabled(a.id, true, master);
   }
-  runtime.expert.unload();
-  runtime.setMirror({ info, loadedAt: Date.now() });
-  runtime.bot.updateConfig({ source: 'mirror' });
-  runtime.journal.write(
-    'success',
-    null,
-    `Mirror mode: ${info.name} runs in your MetaTrader on the master account; arming the bot copies every position it opens to the followers.`,
-  );
-  return { kind: 'ex5', info };
+  return added;
 }
 
-export function useBuiltinStrategy(runtime: Runtime, strategy?: BotConfig['strategy']): BotView {
-  if (runtime.bot.stats().running) runtime.bot.stop();
-  runtime.expert.unload();
-  runtime.setMirror(null);
-  runtime.bot.updateConfig({ source: 'builtin', ...(strategy ? { strategy } : {}) });
-  runtime.journal.write('info', null, 'Strategy: built-in models');
-  return { config: runtime.bot.config, stats: runtime.bot.stats() };
+export async function removeExpert(runtime: Runtime, id: string): Promise<{ ok: true }> {
+  if (!(await runtime.experts.remove(id))) throw new CommandError('EA not found', 404);
+  return { ok: true };
+}
+
+/** Switches an EA on or off; with the bot running it starts or stops at once. */
+export async function setExpertEnabled(runtime: Runtime, id: string, enabled: boolean): Promise<{ ok: true }> {
+  const master = runtime.bot.stats().running ? runtime.accounts.primary() ?? null : null;
+  if (!(await runtime.experts.setEnabled(id, enabled, master))) throw new CommandError('EA not found', 404);
+  return { ok: true };
 }
 
 /**
- * New input values or chart timeframe for the EA. A running expert is
+ * New input values or chart timeframe for one EA. A running EA is
  * re-initialised with them, the way MetaTrader restarts an EA whose inputs
  * change (OnDeinit with REASON_PARAMETERS, then OnInit).
  */
 export async function configureExpert(
   runtime: Runtime,
+  id: string,
   patch: { inputs?: Record<string, string | number | boolean>; timeframe?: number },
-): Promise<BotView> {
-  const next: Partial<BotConfig> = {};
-  if (patch.inputs) next.expertInputs = { ...patch.inputs };
-  if (patch.timeframe) next.expertTimeframe = patch.timeframe;
-  runtime.bot.updateConfig(next);
-  const master = runtime.accounts.primary();
-  if (runtime.bot.config.source === 'mql5' && runtime.expert.running && master) {
-    await runtime.expert.stop();
-    const ok = await runtime.expert.start(master, runtime.bot.config.expertTimeframe, runtime.bot.config.expertInputs);
-    runtime.journal.write(ok ? 'info' : 'error', master.id, ok ? 'Expert restarted with the new inputs' : 'Expert failed to restart with the new inputs');
-  }
+): Promise<{ ok: true }> {
+  const master = runtime.bot.stats().running ? runtime.accounts.primary() ?? null : null;
+  if (!(await runtime.experts.configure(id, patch, master))) throw new CommandError('EA not found', 404);
+  return { ok: true };
+}
+
+/** Picks the built-in model that trades beside the EAs — or 'none' for the EAs alone. */
+export function useBuiltinStrategy(runtime: Runtime, strategy: BotConfig['strategy']): BotView {
+  runtime.bot.updateConfig({ strategy });
+  runtime.journal.write('info', null, strategy === 'none' ? 'Built-in model off — the EAs switched on trade alone' : `Built-in model: ${strategy}`);
   return { config: runtime.bot.config, stats: runtime.bot.stats() };
 }
