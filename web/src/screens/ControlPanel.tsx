@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { formatMoney, formatPrice, type AccountState, type StrategyInfo } from '@sentinal/shared';
+import { burstSize, formatMoney, formatPrice, type AccountState, type StrategyInfo } from '@sentinal/shared';
 import { api } from '../api';
 import type { SessionState } from '../backend/session';
 import { startBotNow, stopBotNow } from '../components/botActions';
+import { StrategySwitch } from '../components/StrategySwitch';
 import { toast } from '../components/Toast';
 import { Money } from '../components/ui';
 import { useTerminal } from '../store';
@@ -201,7 +202,13 @@ export function ControlPanel({ session, onOpenSettings }: { session: SessionStat
       ? { state: 'bad', detail: master.connectionError ?? 'Account offline' }
       : {
           state: 'ok',
-          detail: `${config.source === 'builtin' ? `SL ${formatMoney(config.stopLossUsd)} · TP ${formatMoney(config.takeProfitUsd)} per leg` : 'Stops set by the EA'}${spread !== null ? ` · spread ${spread.toFixed(2)}` : ''}${master.quoteIntervalSec !== null ? (master.quoteIntervalSec === 0 ? ' · every tick' : ` · quotes each ${master.quoteIntervalSec}s`) : ''}`,
+          detail: `${
+            config.source !== 'builtin'
+              ? 'Stops set by the EA'
+              : config.strategy === 'burst'
+                ? `TP +${config.burst.takeProfitPrice.toFixed(2)} on every position${config.burst.stopLossPrice ? ` · SL ${config.burst.stopLossPrice.toFixed(2)}` : ' · no stop loss'}`
+                : `SL ${formatMoney(config.stopLossUsd)} · TP ${formatMoney(config.takeProfitUsd)} per leg`
+          }${spread !== null ? ` · spread ${spread.toFixed(2)}` : ''}${master.quoteIntervalSec !== null ? (master.quoteIntervalSec === 0 ? ' · every tick' : ` · quotes each ${master.quoteIntervalSec}s`) : ''}`,
         };
   const scoring = strategyLine(strategy, running);
 
@@ -249,6 +256,7 @@ export function ControlPanel({ session, onOpenSettings }: { session: SessionStat
   };
 
   const connectedTo = session.status === 'live' ? session.broker.broker : demo ? 'the demo market' : '—';
+  const burstCount = master ? burstSize(master.balance, config.burst.positionsPerStep, config.burst.balanceStep, config.burst.maxPositions) : 0;
   const botPositions = positions.filter((p) => p.accountId === master?.id);
   const floating = botPositions.reduce((sum, p) => sum + p.profit, 0);
 
@@ -352,13 +360,28 @@ export function ControlPanel({ session, onOpenSettings }: { session: SessionStat
               {stats?.haltReason && <span className="text-xs text-loss">· {stats.haltReason}</span>}
             </p>
           </div>
-          <button className="text-right" onClick={onOpenSettings} title="Change the strategy">
-            <p className="panel-field-label">Strategy</p>
-            <p className="mt-0.5 max-w-[16rem] truncate text-sm font-semibold text-ink underline decoration-[var(--color-flame)]/50 underline-offset-4">
-              {strategy?.fileName ?? strategy?.name ?? 'Built-in'}
-            </p>
+          <button className="text-right text-xs font-semibold text-[var(--color-ink-muted)] underline decoration-[var(--color-flame)]/50 underline-offset-4" onClick={onOpenSettings}>
+            Strategy settings
           </button>
         </div>
+
+        <div className="mt-4">
+          <StrategySwitch compact />
+        </div>
+
+        {config.source === 'builtin' && config.strategy === 'burst' && master && (
+          <p className="tabular mt-3 rounded-xl border border-[var(--color-line)] bg-black/30 px-3.5 py-2.5 text-[0.75rem] leading-relaxed text-[var(--color-ink-dim)]">
+            Next burst: <span className="font-semibold text-ink">{burstCount} × {config.burst.lot.toFixed(2)}</span>{' '}
+            {config.burst.direction === 'trend' ? 'with the trend' : config.burst.direction.toUpperCase()} · TP +{config.burst.takeProfitPrice.toFixed(2)}
+            {config.burst.stopLossPrice ? ` · SL ${config.burst.stopLossPrice.toFixed(2)}` : ' · no stop loss'}
+            {burstCount > 0 && (
+              <span className="block text-[var(--color-ink-muted)]">
+                +{formatMoney(burstCount * config.burst.lot * 100 * config.burst.takeProfitPrice)} if it reaches take profit ·{' '}
+                <span className="text-loss">a {(master.balance / (burstCount * config.burst.lot * 100)).toFixed(2)} move against it costs the whole balance</span>
+              </span>
+            )}
+          </p>
+        )}
 
         <div className="mt-5 grid grid-cols-2 gap-3">
           <button className="btn btn-go py-3.5 text-sm font-bold uppercase tracking-wide" disabled={running || busy !== null || !master} onClick={() => void start()}>

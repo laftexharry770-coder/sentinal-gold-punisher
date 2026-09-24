@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { formatMoney, getSymbolSpec, riskSizedLeg, type BotConfig } from '@sentinal/shared';
+import { burstSize, formatMoney, getSymbolSpec, riskSizedLeg, type BotConfig } from '@sentinal/shared';
 import { api } from '../api';
 import { StrategyCard } from '../components/StrategyPanel';
 import { toast } from '../components/Toast';
@@ -106,8 +106,124 @@ function DispatchCard() {
   );
 }
 
+/** The burst model's settings, with what they mean for this account in money. */
+function BurstCard({ draft, onChange, balance }: { draft: Draft['burst']; onChange: (next: Draft['burst']) => void; balance: number }) {
+  const set = <K extends keyof Draft['burst']>(key: K, value: Draft['burst'][K]) => onChange({ ...draft, [key]: value });
+  const count = burstSize(balance, draft.positionsPerStep, draft.balanceStep, draft.maxPositions);
+  const perDollarMove = count * draft.lot * 100;
+  const target = perDollarMove * draft.takeProfitPrice;
+  const wipeMove = perDollarMove > 0 ? balance / perDollarMove : 0;
+
+  return (
+    <Card
+      title="Burst"
+      subtitle="Many small positions at once, each taking profit at the broker — the video's way of trading"
+      actions={<Chip tone={draft.stopLossPrice ? 'neutral' : 'loss'}>{draft.stopLossPrice ? `stop ${draft.stopLossPrice.toFixed(2)}` : 'no stop loss'}</Chip>}
+      bodyClass="p-4 space-y-4"
+    >
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <NumberField label="Lot per position" value={draft.lot} onChange={(v) => set('lot', v)} step={0.01} min={0.01} suffix="lot" />
+        <NumberField
+          label="Positions per step"
+          value={draft.positionsPerStep}
+          onChange={(v) => set('positionsPerStep', Math.max(1, Math.round(v)))}
+          step={1}
+          min={1}
+          hint={`${draft.positionsPerStep} positions for every ${formatMoney(draft.balanceStep)} of balance.`}
+        />
+        <NumberField label="Balance step" value={draft.balanceStep} onChange={(v) => set('balanceStep', v)} step={1} min={1} suffix="$" />
+        <NumberField
+          label="Most positions per burst"
+          value={draft.maxPositions}
+          onChange={(v) => set('maxPositions', Math.max(1, Math.round(v)))}
+          step={1}
+          min={1}
+          max={200}
+        />
+        <NumberField
+          label="Take profit"
+          value={draft.takeProfitPrice}
+          onChange={(v) => set('takeProfitPrice', v)}
+          step={0.5}
+          min={0.1}
+          suffix="price"
+          hint="Distance above a buy's entry (below a sell's) — 5.00 is $5 per 0.01 lot on gold."
+        />
+        <div className="space-y-2">
+          <Toggle
+            label="Stop loss"
+            hint={draft.stopLossPrice ? 'Each position closes this far against its entry.' : 'Off, as in the video: positions run until take profit or the broker’s stop-out.'}
+            checked={draft.stopLossPrice !== null}
+            onChange={(on) => set('stopLossPrice', on ? 2.5 : null)}
+          />
+          {draft.stopLossPrice !== null && (
+            <NumberField label="Stop distance" value={draft.stopLossPrice} onChange={(v) => set('stopLossPrice', v > 0 ? v : null)} step={0.5} min={0.1} suffix="price" />
+          )}
+        </div>
+        <Segmented
+          label="Direction"
+          value={draft.direction}
+          onChange={(v) => set('direction', v)}
+          options={[
+            { value: 'trend', label: 'Follow trend' },
+            { value: 'buy', label: 'Buy only' },
+            { value: 'sell', label: 'Sell only' },
+          ]}
+        />
+        <NumberField
+          label="Wait before next burst"
+          value={draft.reentryDelayMs / 1000}
+          onChange={(v) => set('reentryDelayMs', Math.max(0, Math.round(v * 1000)))}
+          step={1}
+          min={0}
+          suffix="s"
+          hint="0 opens the next burst the moment the last one has closed."
+        />
+      </div>
+
+      {draft.direction === 'trend' && (
+        <div className="grid gap-4 md:grid-cols-3">
+          <div>
+            <label className="label" htmlFor="burst-tf">
+              Trend timeframe
+            </label>
+            <select id="burst-tf" className="field" value={draft.trendTimeframeMin} onChange={(e) => set('trendTimeframeMin', Number(e.target.value))}>
+              {[1, 5, 15, 30, 60].map((m) => (
+                <option key={m} value={m}>
+                  {m < 60 ? `M${m}` : 'H1'}
+                </option>
+              ))}
+            </select>
+          </div>
+          <NumberField label="Fast EMA" value={draft.trendFastPeriod} onChange={(v) => set('trendFastPeriod', Math.max(1, Math.round(v)))} step={1} min={1} />
+          <NumberField label="Slow EMA" value={draft.trendSlowPeriod} onChange={(v) => set('trendSlowPeriod', Math.max(2, Math.round(v)))} step={1} min={2} />
+        </div>
+      )}
+
+      <div className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
+        {balance > 0 ? (
+          <>
+            At {formatMoney(balance)} the next burst is{' '}
+            <span className="tabular font-semibold text-ink">
+              {count} × {draft.lot.toFixed(2)}
+            </span>
+            . Every position reaching take profit adds <span className="tabular font-semibold text-profit">{formatMoney(target)}</span>.{' '}
+            <span className="text-loss">
+              {draft.stopLossPrice
+                ? `Every position stopping out costs ${formatMoney(perDollarMove * draft.stopLossPrice)}.`
+                : `With no stop, a ${wipeMove.toFixed(2)} move against the burst costs the whole balance.`}
+            </span>
+          </>
+        ) : (
+          'Connect an account to see what a burst means for it.'
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export function TradeSettings() {
-  const { config, stats, portfolio, strategy } = useTerminal();
+  const { config, stats, portfolio, strategy, accounts } = useTerminal();
   const [draft, setDraft] = useState<Draft>(config);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -124,6 +240,8 @@ export function TradeSettings() {
     return JSON.stringify(strip(draft)) !== JSON.stringify(strip(config));
   }, [draft, config]);
   const builtin = config.source === 'builtin';
+  const burst = builtin && draft.strategy === 'burst';
+  const masterBalance = accounts.find((a) => a.role === 'master')?.balance ?? accounts[0]?.balance ?? 0;
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     setTouched(true);
@@ -166,6 +284,10 @@ export function TradeSettings() {
     <div className="space-y-3 pb-4">
       <StrategyCard strategy={strategy} config={config} />
 
+      {builtin && draft.strategy === 'burst' && (
+        <BurstCard draft={draft.burst} balance={masterBalance} onChange={(next) => set('burst', next)} />
+      )}
+
       <DispatchCard />
 
       {!builtin && (
@@ -176,7 +298,13 @@ export function TradeSettings() {
         </p>
       )}
 
-      <div className={builtin ? 'space-y-3' : 'space-y-3 opacity-60'}>
+      {burst && (
+        <p className="px-1 text-xs leading-relaxed text-[var(--color-ink-muted)]">
+          Burst sizes and closes its own positions; the model settings below apply to the other built-in models (choose one there to use it).
+        </p>
+      )}
+
+      <div className={builtin && !burst ? 'space-y-3' : 'space-y-3 opacity-60'}>
       <Card
         title="Built-in model"
         subtitle={`${config.symbol} · dollar-based risk`}
@@ -201,12 +329,13 @@ export function TradeSettings() {
             value={draft.strategy}
             onChange={(e) => set('strategy', e.target.value as Draft['strategy'])}
           >
+            <option value="burst">Burst — like the video</option>
             <option value="adaptive-scalp">Adaptive scalp (trend pullback)</option>
             <option value="momentum">Momentum breakout</option>
             <option value="mean-reversion">Mean reversion</option>
           </select>
           <p className="mt-1 text-[0.6875rem] text-[var(--color-ink-muted)]">
-            Adaptive scalp is the shipped default: it leans on the fast/slow spread and enters on pullbacks.
+            Burst trades like the video (settings above). Adaptive scalp leans on the fast/slow spread and enters on pullbacks.
           </p>
         </div>
 

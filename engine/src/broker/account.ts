@@ -44,6 +44,8 @@ export interface OpenRequest {
   clientId?: string | null;
   /** Largest price deviation accepted, in points. */
   slippagePoints?: number;
+  /** A position of a burst, so a follower can size its own burst from its own balance. */
+  burst?: { index: number; perStep: number; step: number; max: number };
 }
 
 export type OpenResult =

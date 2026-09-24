@@ -3,6 +3,7 @@ import type { BotConfig, StrategyInfo, StrategyInput } from '@sentinal/shared';
 import sampleExpert from '../../../mql5/samples/Sentinal.mq5?raw';
 import { api, type StrategyFile, type StrategyLoadOutcome } from '../api';
 import { readStrategyFile } from '../strategyFiles';
+import { StrategySwitch, useSavedStrategy } from './StrategySwitch';
 import { toast } from './Toast';
 import { Card, Chip, Toggle } from './ui';
 
@@ -242,7 +243,7 @@ function ExpertInputs({ strategy, config }: { strategy: StrategyInfo; config: Bo
 /* ------------------------------------------------------------------ */
 
 const SOURCE_LABEL: Record<StrategyInfo['source'], string> = {
-  builtin: 'Built-in models',
+  builtin: 'Built-in model',
   mql5: 'MQL5 expert (.mq5)',
   mirror: 'MetaTrader EA (.ex5)',
 };
@@ -267,6 +268,7 @@ export function StrategyCard({ strategy, config }: { strategy: StrategyInfo | nu
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const source = strategy?.source ?? config.source;
+  const [saved, refreshSaved] = useSavedStrategy();
 
   const load = async (files: StrategyFile[]) => {
     setBusy(true);
@@ -295,14 +297,17 @@ export function StrategyCard({ strategy, config }: { strategy: StrategyInfo | nu
     await load(await Promise.all(accepted.map(readStrategyFile)));
   };
 
-  const builtin = async () => {
+  const forget = async () => {
+    if (!saved) return;
+    if (!window.confirm(`Remove ${saved.fileName} from this ${saved.active ? 'terminal? Burst takes over as the strategy.' : 'terminal?'}`)) return;
     setBusy(true);
     try {
-      await api.useBuiltinStrategy();
+      await api.forgetSavedStrategy();
       setOutcome(null);
-      toast('Built-in models selected');
+      toast(`${saved.fileName} removed`, 'info');
     } finally {
       setBusy(false);
+      refreshSaved();
     }
   };
 
@@ -315,7 +320,7 @@ export function StrategyCard({ strategy, config }: { strategy: StrategyInfo | nu
       subtitle="What the bot trades with — change it any time"
       actions={
         <div className="flex items-center gap-1.5">
-          <Chip tone="gold">{SOURCE_LABEL[source]}</Chip>
+          <Chip tone="gold">{source === 'builtin' && config.strategy === 'burst' ? 'Burst' : SOURCE_LABEL[source]}</Chip>
           {strategy && <Chip tone={STATUS_TONE[strategy.status]}>{strategy.status}</Chip>}
         </div>
       }
@@ -360,10 +365,17 @@ export function StrategyCard({ strategy, config }: { strategy: StrategyInfo | nu
         </div>
 
         <div className="space-y-2.5 rounded-xl border border-[var(--color-line)] bg-[#0e1116]/70 p-3.5 text-xs leading-relaxed text-[var(--color-ink-dim)]">
+          <StrategySwitch />
           {source === 'builtin' && (
             <p>
-              The engine's own models are trading (<span className="text-ink">{config.strategy}</span>). Upload an EA to replace them; the
-              settings below apply to the built-in models only.
+              {config.strategy === 'burst'
+                ? 'Burst is trading: bursts of small positions in the trend’s direction, each taking profit at the broker, the next burst as soon as the last closes. Its settings are below.'
+                : `The built-in ${config.strategy} model is trading. Its settings are below.`}
+              {saved && !saved.active && (
+                <span className="mt-1 block text-[var(--color-ink-muted)]">
+                  {saved.fileName} stays saved — pick it above to switch back.
+                </span>
+              )}
             </p>
           )}
           {source === 'mql5' && strategy && (
@@ -394,9 +406,11 @@ export function StrategyCard({ strategy, config }: { strategy: StrategyInfo | nu
             </>
           )}
           <div className="flex flex-wrap gap-2 pt-1">
-            <button className="btn btn-ghost px-3 py-1.5 text-xs" disabled={busy || source === 'builtin'} onClick={() => void builtin()}>
-              Use built-in models
-            </button>
+            {saved && (
+              <button className="btn btn-ghost px-3 py-1.5 text-xs text-loss" disabled={busy} onClick={() => void forget()}>
+                Remove {saved.fileName}
+              </button>
+            )}
             <button
               className="btn btn-ghost px-3 py-1.5 text-xs"
               disabled={busy}

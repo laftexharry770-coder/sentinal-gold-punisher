@@ -1,4 +1,4 @@
-import type { BotConfig, Signal, Tick } from '@sentinal/shared';
+import type { BotConfig, Candle, Side, Signal, Tick } from '@sentinal/shared';
 import { clamp, round } from '../util.js';
 
 const FAST_PERIOD = 9;
@@ -124,5 +124,104 @@ export class StrategyEngine {
         return { ...base, reason: trend > 0 ? 'trend up, awaiting pullback' : 'trend down, awaiting pullback' };
       }
     }
+  }
+}
+
+export interface TrendReading {
+  side: Side | null;
+  fast: number;
+  slow: number;
+  price: number;
+  ready: boolean;
+  reason: string;
+}
+
+/** Exponential average seeded with the simple average of its first period. */
+function ema(values: number[], period: number): number {
+  if (values.length < period) return Number.NaN;
+  let value = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  const k = 2 / (period + 1);
+  for (let i = period; i < values.length; i += 1) value += (values[i]! - value) * k;
+  return value;
+}
+
+/**
+ * The trend on closed-bar prices, for the burst model: fast average over the
+ * slow one with price beyond the fast is up, the mirror image is down, and
+ * anything in between is no trend. Kept as one-minute closes (history plus
+ * live quotes) and rolled up to whatever timeframe is asked for.
+ */
+export class TrendTracker {
+  private minutes: number[] = [];
+  private closes: number[] = [];
+
+  prime(candles: Candle[]): void {
+    for (const candle of candles) this.record(Math.floor(candle.time / 60_000), candle.close);
+  }
+
+  update(tick: Tick): void {
+    this.record(Math.floor(tick.time / 60_000), (tick.bid + tick.ask) / 2);
+  }
+
+  private record(minute: number, close: number): void {
+    const last = this.minutes.length - 1;
+    if (last >= 0 && this.minutes[last] === minute) {
+      this.closes[last] = close;
+      return;
+    }
+    if (last >= 0 && minute < this.minutes[last]!) return;
+    this.minutes.push(minute);
+    this.closes.push(close);
+    if (this.minutes.length > 6000) {
+      this.minutes.shift();
+      this.closes.shift();
+    }
+  }
+
+  /** Closes on the given timeframe, oldest first; the last is the forming bar. */
+  private series(timeframeMin: number): number[] {
+    const tf = Math.max(1, Math.round(timeframeMin));
+    if (tf === 1) return this.closes;
+    const out: number[] = [];
+    let bucket = Number.NaN;
+    for (let i = 0; i < this.minutes.length; i += 1) {
+      const b = Math.floor(this.minutes[i]! / tf);
+      if (b === bucket) out[out.length - 1] = this.closes[i]!;
+      else {
+        out.push(this.closes[i]!);
+        bucket = b;
+      }
+    }
+    return out;
+  }
+
+  read(timeframeMin: number, fastPeriod: number, slowPeriod: number): TrendReading {
+    const closes = this.series(timeframeMin);
+    const price = closes[closes.length - 1] ?? 0;
+    const slowN = Math.max(2, Math.round(slowPeriod));
+    const fastN = Math.max(1, Math.min(slowN - 1, Math.round(fastPeriod)));
+    if (closes.length < slowN) {
+      return { side: null, fast: 0, slow: 0, price, ready: false, reason: `reading the trend — ${closes.length}/${slowN} bars` };
+    }
+    const fast = ema(closes, fastN);
+    const slow = ema(closes, slowN);
+    const r = (v: number) => round(v, 3);
+    // A crossing by a hair in a flat market is noise, not a trend: the gap
+    // must be a real share of the bars' typical move, and of the price.
+    let moves = 0;
+    const from = Math.max(1, closes.length - slowN);
+    for (let i = from; i < closes.length; i += 1) moves += Math.abs(closes[i]! - closes[i - 1]!);
+    const typicalMove = moves / Math.max(1, closes.length - from);
+    const minimumGap = Math.max(0.3 * typicalMove, price * 0.00001);
+    if (Math.abs(fast - slow) < minimumGap) {
+      return { side: null, fast: r(fast), slow: r(slow), price, ready: true, reason: 'no clear trend — waiting' };
+    }
+    if (fast > slow && price > fast) {
+      return { side: 'buy', fast: r(fast), slow: r(slow), price, ready: true, reason: `uptrend — EMA${fastN} above EMA${slowN}` };
+    }
+    if (fast < slow && price < fast) {
+      return { side: 'sell', fast: r(fast), slow: r(slow), price, ready: true, reason: `downtrend — EMA${fastN} below EMA${slowN}` };
+    }
+    return { side: null, fast: r(fast), slow: r(slow), price, ready: true, reason: 'no clear trend — waiting' };
   }
 }

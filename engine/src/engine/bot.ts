@@ -1,9 +1,11 @@
 import { Emitter } from '../emitter.js';
 import {
   DEFAULT_BOT_CONFIG,
+  burstSize,
   type Candle,
   getSymbolSpec,
   riskSizedLeg,
+  roundPrice,
   type BotConfig,
   type BotStats,
   type ClosedTrade,
@@ -19,7 +21,7 @@ import { round, startOfDay } from '../util.js';
 import type { CopyTradeEngine } from './copier.js';
 import type { ExpertRunner } from './expert.js';
 import { RecoveryEngine } from './recovery.js';
-import { StrategyEngine } from './strategy.js';
+import { StrategyEngine, TrendTracker } from './strategy.js';
 
 /** Positions the bot itself is responsible for (copies belong to the copier). */
 const BOT_ORIGINS = new Set(['bot', 'recovery']);
@@ -29,6 +31,7 @@ export class BotEngine extends Emitter {
     ...DEFAULT_BOT_CONFIG,
     zeroLoss: { ...DEFAULT_BOT_CONFIG.zeroLoss },
     dispatch: { ...DEFAULT_BOT_CONFIG.dispatch },
+    burst: { ...DEFAULT_BOT_CONFIG.burst },
     expertInputs: {},
   };
   /** Sends orders to the master and every follower at once, when wired. */
@@ -36,6 +39,7 @@ export class BotEngine extends Emitter {
   /** Runs an uploaded MQL5 expert when the strategy source is 'mql5'. */
   private expert: ExpertRunner | null = null;
   private readonly strategy = new StrategyEngine();
+  private readonly trend = new TrendTracker();
   private readonly recoveries = new Map<string, RecoveryEngine>();
 
   private running = false;
@@ -48,6 +52,11 @@ export class BotEngine extends Emitter {
   private lastSignal: Signal | null = null;
   private spreadWarnedAt = 0;
   private warnedMinLot = false;
+  /* Burst model state. */
+  private burstOpen = false;
+  private burstClosedAt = 0;
+  private burstRetryAt = 0;
+  private burstTooSmallWarned = false;
 
   private counters = {
     signalsEvaluated: 0,
@@ -112,6 +121,7 @@ export class BotEngine extends Emitter {
    * minute. Loading history first is what a terminal does anyway.
    */
   prime(candles: Candle[]): void {
+    this.trend.prime(candles);
     for (const candle of candles) {
       this.strategy.update({
         symbol: this.config.symbol,
@@ -162,6 +172,18 @@ export class BotEngine extends Emitter {
         account.id,
         `Mirroring armed — every position the EA opens in MetaTrader on ${account.config.name} is copied${copyNote}`,
       );
+    } else if (this.config.strategy === 'burst') {
+      const b = this.config.burst;
+      const count = burstSize(account.balance, b.positionsPerStep, b.balanceStep, b.maxPositions);
+      this.burstOpen = this.botPositions(account).length > 0;
+      this.burstRetryAt = 0;
+      this.journal.write(
+        'success',
+        account.id,
+        `Bot started — burst mode on ${this.config.symbol}: ${count} × ${b.lot.toFixed(2)} per burst at ${account.balance.toFixed(2)} balance, ` +
+          `take profit +${b.takeProfitPrice.toFixed(2)}${b.stopLossPrice ? `, stop ${b.stopLossPrice.toFixed(2)}` : ', no stop loss'}, ` +
+          `${b.direction === 'trend' ? 'following the trend' : `${b.direction.toUpperCase()} only`}${copyNote}`,
+      );
     } else {
       this.journal.write(
         'success',
@@ -201,6 +223,7 @@ export class BotEngine extends Emitter {
       ...patch,
       zeroLoss: { ...this.config.zeroLoss, ...(patch.zeroLoss ?? {}) },
       dispatch: { ...this.config.dispatch, ...(patch.dispatch ?? {}) },
+      burst: { ...this.config.burst, ...(patch.burst ?? {}) },
       expertInputs: patch.expertInputs ?? this.config.expertInputs,
     };
     if (this.dispatcher) this.dispatcher.config = this.config.dispatch;
@@ -272,8 +295,9 @@ export class BotEngine extends Emitter {
       this.counters.grossLoss = round(this.counters.grossLoss + Math.abs(trade.netProfit));
     }
 
-    // Recovery pooling belongs to the built-in models; an EA manages its own losses.
-    if (this.config.source !== 'builtin') {
+    // Recovery pooling belongs to the signal models; an EA, or a burst with
+    // its own take profit, manages its own exits.
+    if (this.config.source !== 'builtin' || this.config.strategy === 'burst') {
       this.publish();
       return;
     }
@@ -300,6 +324,7 @@ export class BotEngine extends Emitter {
 
   async onTick(tick: Tick, barClosed: boolean): Promise<void> {
     this.strategy.update(tick);
+    this.trend.update(tick);
     if (!this.running) return;
 
     if (this.config.source !== 'builtin') {
@@ -365,6 +390,13 @@ export class BotEngine extends Emitter {
     const account = this.accounts.primary();
     if (!account) return;
 
+    // The burst model keeps its own exits (a take profit on every position)
+    // and acts on every quote.
+    if (this.config.strategy === 'burst') {
+      await this.evaluateBurst(account, tick);
+      return;
+    }
+
     // 1. Basket management runs on every tick regardless of execution mode.
     await this.manageBasket(account);
 
@@ -374,31 +406,7 @@ export class BotEngine extends Emitter {
       this.lastBarTime = tick.time;
     }
 
-    // 3. Risk guards.
-    const spread = round(tick.ask - tick.bid);
-    if (spread > this.config.maxSpread) {
-      if (tick.time - this.spreadWarnedAt > 30_000) {
-        this.spreadWarnedAt = tick.time;
-        this.journal.write('warn', account.id, `Spread ${spread.toFixed(2)} above limit ${this.config.maxSpread.toFixed(2)} — entries paused`);
-      }
-      return;
-    }
-    if (this.config.maxDailyLossUsd !== null && this.counters.dailyProfit <= -this.config.maxDailyLossUsd) {
-      if (!this.haltReason) {
-        this.haltReason = `daily loss limit hit (${this.counters.dailyProfit.toFixed(2)})`;
-        this.journal.write('error', account.id, `Daily loss limit reached — new entries halted until tomorrow`);
-        this.publish();
-      }
-      return;
-    }
-    if (this.config.maxDailyTrades !== null && this.counters.dailyTrades >= this.config.maxDailyTrades) {
-      if (!this.haltReason) {
-        this.haltReason = 'daily trade cap reached';
-        this.journal.write('warn', account.id, 'Daily trade cap reached — new entries halted');
-        this.publish();
-      }
-      return;
-    }
+    if (this.entryBlocked(account, tick)) return;
 
     // 4. Signal.
     const signal = this.strategy.evaluate(this.config, tick);
@@ -411,6 +419,144 @@ export class BotEngine extends Emitter {
 
     // 6. Fresh entries.
     await this.tryEntries(account, signal, tick);
+  }
+
+  /** The spread and daily guards; true when no new position may open now. */
+  private entryBlocked(account: TradingAccount, tick: Tick): boolean {
+    const spread = round(tick.ask - tick.bid);
+    if (spread > this.config.maxSpread) {
+      if (tick.time - this.spreadWarnedAt > 30_000) {
+        this.spreadWarnedAt = tick.time;
+        this.journal.write('warn', account.id, `Spread ${spread.toFixed(2)} above limit ${this.config.maxSpread.toFixed(2)} — entries paused`);
+      }
+      return true;
+    }
+    if (this.config.maxDailyLossUsd !== null && this.counters.dailyProfit <= -this.config.maxDailyLossUsd) {
+      if (!this.haltReason) {
+        this.haltReason = `daily loss limit hit (${this.counters.dailyProfit.toFixed(2)})`;
+        this.journal.write('error', account.id, `Daily loss limit reached — new entries halted until tomorrow`);
+        this.publish();
+      }
+      return true;
+    }
+    if (this.config.maxDailyTrades !== null && this.counters.dailyTrades >= this.config.maxDailyTrades) {
+      if (!this.haltReason) {
+        this.haltReason = 'daily trade cap reached';
+        this.journal.write('warn', account.id, 'Daily trade cap reached — new entries halted');
+        this.publish();
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * One burst at a time: while any of its positions is open the bot waits
+   * (each carries its own take profit at the broker); once the last has
+   * closed, the next burst goes out at once in the trend's direction, sized
+   * from the balance as it now stands.
+   */
+  private async evaluateBurst(account: TradingAccount, tick: Tick): Promise<void> {
+    const cfg = this.config.burst;
+    const open = this.botPositions(account);
+    const reading = this.trend.read(cfg.trendTimeframeMin, cfg.trendFastPeriod, cfg.trendSlowPeriod);
+    const side: Side | null = cfg.direction === 'trend' ? reading.side : cfg.direction;
+    this.counters.signalsEvaluated += 1;
+    this.lastSignal = {
+      time: tick.time,
+      symbol: this.config.symbol,
+      side,
+      strength: side ? 1 : 0,
+      fast: reading.fast,
+      slow: reading.slow,
+      momentum: 0,
+      volatility: 0,
+      reason:
+        open.length > 0
+          ? `burst open — ${open.length} position(s) riding to +${cfg.takeProfitPrice.toFixed(2)}`
+          : cfg.direction === 'trend'
+            ? reading.reason
+            : `${cfg.direction.toUpperCase()} only`,
+    };
+
+    if (open.length > 0) {
+      this.burstOpen = true;
+      return;
+    }
+    if (this.burstOpen) {
+      this.burstOpen = false;
+      this.burstClosedAt = tick.time;
+      this.journal.write('success', account.id, `Burst closed — balance now ${account.balance.toFixed(2)}`);
+      this.publish();
+    }
+    if (tick.time < this.burstRetryAt || tick.time - this.burstClosedAt < cfg.reentryDelayMs) return;
+    if (this.entryBlocked(account, tick)) return;
+    if (!side) return;
+
+    const count = burstSize(account.balance, cfg.positionsPerStep, cfg.balanceStep, cfg.maxPositions);
+    if (count < 1) {
+      if (!this.burstTooSmallWarned) {
+        this.burstTooSmallWarned = true;
+        this.journal.write('warn', account.id, `Balance ${account.balance.toFixed(2)} is below one position's step — no burst opened`);
+      }
+      return;
+    }
+    this.burstTooSmallWarned = false;
+
+    const spec = account.spec(this.config.symbol);
+    const entry = side === 'buy' ? tick.ask : tick.bid;
+    const dir = side === 'buy' ? 1 : -1;
+    const takeProfit = roundPrice(spec, entry + dir * cfg.takeProfitPrice);
+    const stopLoss = cfg.stopLossPrice && cfg.stopLossPrice > 0 ? roundPrice(spec, entry - dir * cfg.stopLossPrice) : null;
+    const comment = `${cfg.comment} ${side.toUpperCase()}`.trim();
+
+    // Every position of the burst leaves at once.
+    const results = await Promise.all(
+      Array.from({ length: count }, (_, i) =>
+        this.submit(account, {
+          symbol: this.config.symbol,
+          side,
+          volume: cfg.lot,
+          stopLoss,
+          takeProfit,
+          stopLossUsd: null,
+          takeProfitUsd: null,
+          origin: 'bot',
+          comment,
+          basketIndex: i,
+          burst: { index: i, perStep: cfg.positionsPerStep, step: cfg.balanceStep, max: cfg.maxPositions },
+        }),
+      ),
+    );
+
+    let opened = 0;
+    let firstPrice: number | null = null;
+    let rejected: string | null = null;
+    for (const result of results) {
+      if (!result.ok) {
+        rejected = result.error;
+        continue;
+      }
+      opened += 1;
+      firstPrice ??= result.position.openPrice;
+      this.counters.tradesOpened += 1;
+      this.counters.dailyTrades += 1;
+    }
+    if (rejected) this.journal.write('warn', account.id, `${count - opened} of ${count} burst position(s) rejected: ${rejected}`);
+    if (opened === 0) {
+      // Nothing filled: try again shortly rather than on every quote.
+      this.burstRetryAt = tick.time + 5_000;
+      this.publish();
+      return;
+    }
+    this.burstOpen = true;
+    this.journal.write(
+      'trade',
+      account.id,
+      `BURST ${side.toUpperCase()} ${opened} × ${cfg.lot.toFixed(2)} ${this.config.symbol} @ ${(firstPrice ?? entry).toFixed(spec.digits)} → TP ${takeProfit.toFixed(spec.digits)}` +
+        `${stopLoss !== null ? `, SL ${stopLoss.toFixed(spec.digits)}` : ''} (balance ${account.balance.toFixed(2)})`,
+    );
+    this.publish();
   }
 
   /** Closes the whole bot basket once its combined float clears the target. */

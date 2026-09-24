@@ -29,13 +29,20 @@ export class StateDir {
     renameSync(temp, target);
   }
 
-  strategy(): StrategyFile[] | null {
-    const saved = this.read<{ files: StrategyFile[] }>('strategy.json');
-    return saved && Array.isArray(saved.files) && saved.files.length > 0 ? saved.files : null;
+  /** The uploaded EA and whether it is the strategy in use (a built-in model may be trading instead). */
+  strategy(): { files: StrategyFile[]; active: boolean; savedAt: number } | null {
+    const saved = this.read<{ files?: StrategyFile[]; active?: boolean; savedAt?: number }>('strategy.json');
+    if (!saved || !Array.isArray(saved.files) || saved.files.length === 0) return null;
+    return { files: saved.files, active: saved.active !== false, savedAt: saved.savedAt ?? 0 };
   }
 
-  saveStrategy(files: StrategyFile[] | null): void {
-    this.write('strategy.json', { files: files ?? [], savedAt: Date.now() });
+  saveStrategy(files: StrategyFile[] | null, active = true): void {
+    this.write('strategy.json', { files: files ?? [], savedAt: Date.now(), active });
+  }
+
+  setStrategyActive(active: boolean): void {
+    const saved = this.strategy();
+    if (saved) this.write('strategy.json', { ...saved, active });
   }
 
   botConfig(): Partial<BotConfig> | null {

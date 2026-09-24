@@ -45,6 +45,7 @@ import {
   saveBotConfig,
   saveMetaApiCredentials,
   saveStrategyFiles,
+  setStrategyActive,
 } from './persist';
 import { LOCKED, type ConnectInput, type SessionState } from './session';
 import type { BotView, NewAccountPayload, OrderPayload, Subscription, TerminalBackend } from './types';
@@ -151,7 +152,7 @@ export function createLocalBackend(): TerminalBackend {
     const config = loadBotConfig();
     if (config) rt.bot.updateConfig({ ...config, enabled: false });
     const saved = loadStrategyFiles();
-    if (!saved) return;
+    if (!saved || !saved.active) return;
     try {
       const outcome = await loadStrategy(rt, saved.files);
       if (outcome.kind === 'mql5' && !outcome.result.ok) saveStrategyFiles(null);
@@ -384,8 +385,38 @@ export function createLocalBackend(): TerminalBackend {
     },
 
     useBuiltinStrategy: async (strategy) => {
-      saveStrategyFiles(null);
+      // The uploaded EA is kept, so switching back needs no second upload.
+      setStrategyActive(false);
       return useBuiltinStrategy(requireRuntime(), strategy);
+    },
+
+    savedStrategy: async () => {
+      const saved = loadStrategyFiles();
+      if (!saved) return null;
+      const main = saved.files.find((f) => /\.(mq5|ex5)$/i.test(f.name));
+      if (!main) return null;
+      return { fileName: main.name, kind: /\.ex5$/i.test(main.name) ? 'ex5' : 'mql5', active: saved.active, savedAt: saved.savedAt };
+    },
+
+    useSavedStrategy: async () => {
+      const rt = requireRuntime();
+      const saved = loadStrategyFiles();
+      if (!saved) throw new Error('No uploaded EA is saved — upload the .mq5 or .ex5 first.');
+      const outcome = await loadStrategy(rt, saved.files);
+      if (outcome.kind === 'ex5' || outcome.result.ok) {
+        setStrategyActive(true);
+        const config = loadBotConfig();
+        if (config?.expertInputs && outcome.kind === 'mql5') {
+          rt.bot.updateConfig({ expertInputs: config.expertInputs, expertTimeframe: config.expertTimeframe ?? rt.bot.config.expertTimeframe });
+        }
+      }
+      return outcome;
+    },
+
+    forgetSavedStrategy: async () => {
+      const saved = loadStrategyFiles();
+      if (saved?.active && runtime) useBuiltinStrategy(runtime);
+      saveStrategyFiles(null);
     },
 
     configureExpert: async (patch) => configureExpert(requireRuntime(), patch),

@@ -1,6 +1,7 @@
 import { Emitter } from '../emitter.js';
 import {
   DEFAULT_BOT_CONFIG,
+  burstSize,
   roundLot,
   roundPrice,
   stopLevels,
@@ -221,7 +222,11 @@ export class CopyTradeEngine extends Emitter {
     if (!settings.enabled || !this.allowed(settings, req.symbol)) return null;
     const symbol = this.followerSymbol(slave, req.symbol);
     const side: Side = settings.reverse ? (req.side === 'buy' ? 'sell' : 'buy') : req.side;
-    const volume = this.resolveVolume(settings, master, slave, req.volume, symbol);
+    // A burst copied by balance keeps the lot and scales the count: a
+    // follower runs the burst its own balance would, not a shrunken master's.
+    const burstByBalance = req.burst !== undefined && settings.sizing === 'balance-ratio';
+    if (burstByBalance && req.burst!.index >= burstSize(slave.balance, req.burst!.perStep, req.burst!.step, req.burst!.max)) return null;
+    const volume = burstByBalance ? roundLot(slave.spec(symbol), req.volume) : this.resolveVolume(settings, master, slave, req.volume, symbol);
     const { sl, tp } = this.levels(master, req, reference);
     const spec = slave.spec(symbol);
     // A reversed copy swaps the levels: where the master takes profit, the follower stops out.

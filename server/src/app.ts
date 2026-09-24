@@ -104,7 +104,8 @@ export function createServerContext(): ServerContext {
       const { enabled: _enabled, symbol: _symbol, source: _source, ...rest } = saved;
       runtime.bot.updateConfig({ ...rest, enabled: false });
     }
-    const files = state.strategy() ?? (config.strategyFile ? [readStrategyFromDisk(config.strategyFile)] : null);
+    const uploaded = state.strategy();
+    const files = uploaded ? (uploaded.active ? uploaded.files : null) : config.strategyFile ? [readStrategyFromDisk(config.strategyFile)] : null;
     if (!files) return;
     try {
       const outcome = await loadStrategy(runtime, files);

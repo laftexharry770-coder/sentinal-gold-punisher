@@ -273,6 +273,36 @@ export interface ZeroLossConfig {
   maxRecoveryLot: number;
 }
 
+/**
+ * The burst model: many small positions opened together in the trend's
+ * direction, each taking profit at a fixed price distance set at the broker,
+ * with the next burst sent the moment the last one has closed.
+ */
+export interface BurstConfig {
+  /** Lot size of every position in a burst. */
+  lot: number;
+  /** Positions per balance step: 16 per $10 opens 16 at $10, 32 at $20… */
+  positionsPerStep: number;
+  /** Account balance per step, account currency. */
+  balanceStep: number;
+  /** Most positions one burst may open. */
+  maxPositions: number;
+  /** Take profit of each position, as a price distance from its entry (5.00 = $5 on gold). */
+  takeProfitPrice: number;
+  /** Stop loss as a price distance, or null for none. */
+  stopLossPrice: number | null;
+  /** 'trend' follows the moving averages; 'buy' and 'sell' fix the direction. */
+  direction: 'trend' | 'buy' | 'sell';
+  /** Bars the trend is read from, in minutes (1 = M1, 5 = M5…). */
+  trendTimeframeMin: number;
+  trendFastPeriod: number;
+  trendSlowPeriod: number;
+  /** Wait after a burst closes before the next one, ms (0 = at once). */
+  reentryDelayMs: number;
+  /** Comment written on every position, followed by BUY or SELL. */
+  comment: string;
+}
+
 /** Where trading decisions come from. */
 export type StrategySource =
   /** The engine's own signal models (adaptive scalp, momentum, mean reversion). */
@@ -303,7 +333,9 @@ export interface BotConfig {
   dispatch: DispatchConfig;
   /** Execution style — intrabar fires on tick, close waits for candle close. */
   execution: 'intrabar' | 'bar-close';
-  strategy: 'adaptive-scalp' | 'momentum' | 'mean-reversion';
+  strategy: 'burst' | 'adaptive-scalp' | 'momentum' | 'mean-reversion';
+  /** Settings of the burst model. */
+  burst: BurstConfig;
   /**
    * 'fixed' uses lotSize with the money stop/target below. 'risk-percent'
    * sizes every leg from live account equity so the same fraction is risked

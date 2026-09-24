@@ -117,7 +117,7 @@ describe('the in-browser backend over MetaApi', () => {
     expect(backend.sessionState()).toMatchObject({ status: 'locked', error: expect.stringMatching(/no longer on this MetaApi token/) });
   });
 
-  it('keeps an uploaded strategy for the next visit, and forgets it for the built-in models', async () => {
+  it('keeps an uploaded strategy for the next visit, and switches between it and Burst without a new upload', async () => {
     const backend = createLocalBackend();
     await backend.startDemo();
     const outcome = await backend.loadStrategy([{ name: 'Sentinal.mq5', content: sample, encoding: 'text' }]);
@@ -133,7 +133,13 @@ describe('the in-browser backend over MetaApi', () => {
     expect(snapshot.payload.strategy.source).toBe('mql5');
     expect(snapshot.payload.bot).toMatchObject({ expertTimeframe: 5, expertInputs: { InpAutoTrade: true } });
 
-    await again.useBuiltinStrategy();
+    await again.useBuiltinStrategy('burst');
+    // Switching to Burst keeps the EA, ready to switch back to without an upload.
+    expect(await again.savedStrategy()).toMatchObject({ fileName: 'Sentinal.mq5', kind: 'mql5', active: false });
+    const back = await again.useSavedStrategy();
+    expect(back.kind === 'mql5' && back.result.ok).toBe(true);
+    expect(await again.savedStrategy()).toMatchObject({ active: true });
+    await again.useBuiltinStrategy('burst');
     const third = createLocalBackend();
     const later: ServerMessage[] = [];
     third.subscribe({ onMessage: (m) => later.push(m), onStatus: () => undefined });
@@ -141,6 +147,10 @@ describe('the in-browser backend over MetaApi', () => {
     const last = [...later].reverse().find((m) => m.type === 'snapshot');
     if (last?.type !== 'snapshot') throw new Error('no snapshot');
     expect(last.payload.strategy.source).toBe('builtin');
+    expect(last.payload.strategy.name).toBe('Burst');
+    expect(await third.savedStrategy()).toMatchObject({ fileName: 'Sentinal.mq5', active: false });
+    await third.forgetSavedStrategy();
+    expect(await third.savedStrategy()).toBeNull();
     await backend.signOut();
     await again.signOut();
     await third.signOut();

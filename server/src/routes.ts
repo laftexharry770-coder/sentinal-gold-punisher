@@ -81,11 +81,29 @@ export function parseBotPatch(body: Record<string, unknown>): Partial<BotConfig>
   if (body.sizing === 'fixed' || body.sizing === 'risk-percent') patch.sizing = body.sizing;
   if (body.execution === 'intrabar' || body.execution === 'bar-close') patch.execution = body.execution;
   if (
+    body.strategy === 'burst' ||
     body.strategy === 'adaptive-scalp' ||
     body.strategy === 'momentum' ||
     body.strategy === 'mean-reversion'
   ) {
     patch.strategy = body.strategy;
+  }
+
+  const burst = body.burst;
+  if (burst && typeof burst === 'object') {
+    const src = burst as Record<string, unknown>;
+    const next: Partial<BotConfig['burst']> = {};
+    for (const key of ['lot', 'positionsPerStep', 'balanceStep', 'maxPositions', 'takeProfitPrice', 'trendTimeframeMin', 'trendFastPeriod', 'trendSlowPeriod', 'reentryDelayMs'] as const) {
+      const value = asNumber(src[key]);
+      if (value !== undefined && value >= 0) next[key] = value;
+    }
+    if ('stopLossPrice' in src) {
+      const value = asNullableNumber(src.stopLossPrice);
+      if (value !== undefined) next.stopLossPrice = value && value > 0 ? value : null;
+    }
+    if (src.direction === 'trend' || src.direction === 'buy' || src.direction === 'sell') next.direction = src.direction;
+    if (typeof src.comment === 'string') next.comment = src.comment.slice(0, 16);
+    patch.burst = next as BotConfig['burst'];
   }
   if (typeof body.symbol === 'string' && body.symbol.trim()) patch.symbol = body.symbol.trim();
 
@@ -385,11 +403,42 @@ export function createRouter(context: ServerContext): Router {
     }
   });
 
+  router.get('/strategy/saved', (_req, res) => {
+    const saved = context.state.strategy();
+    const main = saved?.files.find((f) => /\.(mq5|ex5)$/i.test(f.name));
+    res.json(
+      saved && main
+        ? { fileName: main.name, kind: /\.ex5$/i.test(main.name) ? 'ex5' : 'mql5', active: saved.active, savedAt: saved.savedAt }
+        : null,
+    );
+  });
+
+  router.post('/strategy/saved/use', async (_req, res) => {
+    try {
+      const saved = context.state.strategy();
+      if (!saved) throw new CommandError('No uploaded EA is saved — upload the .mq5 or .ex5 first.', 404);
+      const outcome = await loadStrategy(runtime, saved.files);
+      if (outcome.kind === 'ex5' || outcome.result.ok) context.state.setStrategyActive(true);
+      res.json(outcome);
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  router.delete('/strategy/saved', (_req, res) => {
+    if (context.state.strategy()?.active) useBuiltinStrategy(runtime);
+    context.state.saveStrategy(null);
+    res.json({ ok: true });
+  });
+
   router.post('/strategy/builtin', (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const strategy =
-      body.strategy === 'adaptive-scalp' || body.strategy === 'momentum' || body.strategy === 'mean-reversion' ? body.strategy : undefined;
-    context.state.saveStrategy(null);
+      body.strategy === 'burst' || body.strategy === 'adaptive-scalp' || body.strategy === 'momentum' || body.strategy === 'mean-reversion'
+        ? body.strategy
+        : undefined;
+    // The uploaded EA is kept, so switching back needs no second upload.
+    context.state.setStrategyActive(false);
     res.json(useBuiltinStrategy(runtime, strategy));
   });
 

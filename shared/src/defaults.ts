@@ -18,7 +18,25 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
   // Every order goes to the master and all followers in the same instant.
   dispatch: { mode: 'simultaneous', cancelOrphans: true },
   execution: 'intrabar',
-  strategy: 'adaptive-scalp',
+  // The burst model trades the way the reference MT5 Control recording does:
+  // 0.01 lots, 16 positions per $10 of balance (never more than 50), each
+  // taking profit $5.00 above its entry at the broker, no stop, and the next
+  // burst sent as soon as the last one has closed — in the trend's direction.
+  strategy: 'burst',
+  burst: {
+    lot: 0.01,
+    positionsPerStep: 16,
+    balanceStep: 10,
+    maxPositions: 50,
+    takeProfitPrice: 5,
+    stopLossPrice: null,
+    direction: 'trend',
+    trendTimeframeMin: 1,
+    trendFastPeriod: 20,
+    trendSlowPeriod: 50,
+    reentryDelayMs: 0,
+    comment: 'Sentinal',
+  },
   // Adaptive by default: each leg risks 0.25% of equity, with the stop a $2
   // move in gold and the target half of it, matching the shipped 2:1 profile.
   sizing: 'risk-percent',

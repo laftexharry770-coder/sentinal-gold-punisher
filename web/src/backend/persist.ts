@@ -51,17 +51,25 @@ export function saveMetaApiCredentials(value: SavedMetaApi | null): void {
 export interface SavedStrategy {
   files: StrategyFile[];
   savedAt: number;
+  /** Whether the uploaded EA is the strategy in use, or kept aside while a built-in model trades. */
+  active: boolean;
 }
 
 export function loadStrategyFiles(): SavedStrategy | null {
-  const saved = read<SavedStrategy>(KEYS.strategy);
+  const saved = read<Partial<SavedStrategy>>(KEYS.strategy);
   if (!saved || !Array.isArray(saved.files) || saved.files.length === 0) return null;
-  return saved;
+  return { files: saved.files, savedAt: saved.savedAt ?? 0, active: saved.active !== false };
 }
 
 /** False when the browser would not hold the files (a large .ex5 on a full quota). */
-export function saveStrategyFiles(files: StrategyFile[] | null): boolean {
-  return write(KEYS.strategy, files ? { files, savedAt: Date.now() } : null);
+export function saveStrategyFiles(files: StrategyFile[] | null, active = true): boolean {
+  return write(KEYS.strategy, files ? { files, savedAt: Date.now(), active } : null);
+}
+
+/** Keeps the uploaded EA but marks whether it is the one trading. */
+export function setStrategyActive(active: boolean): void {
+  const saved = loadStrategyFiles();
+  if (saved) write(KEYS.strategy, { ...saved, active });
 }
 
 /** Settings worth keeping; what the session decides (symbol, source, arming) is left out. */

@@ -5,6 +5,7 @@ import type {
   MetaApiAccountSummary,
   NewAccountPayload,
   OrderPayload,
+  SavedStrategyInfo,
   StrategyLoadOutcome,
   Subscription,
   TerminalBackend,
@@ -171,6 +172,11 @@ export function createRemoteBackend(): TerminalBackend {
     stopBot: (closePositions = false) => post<BotView>('/bot/stop', { closePositions }),
     loadStrategy: (files) => post<StrategyLoadOutcome>('/strategy', { files }),
     useBuiltinStrategy: (strategy) => post<BotView>('/strategy/builtin', { strategy }),
+    savedStrategy: () => call<SavedStrategyInfo | null>('/strategy/saved'),
+    useSavedStrategy: () => post<StrategyLoadOutcome>('/strategy/saved/use'),
+    forgetSavedStrategy: async () => {
+      await call('/strategy/saved', { method: 'DELETE' });
+    },
     configureExpert: (patch) => call<BotView>('/strategy/expert', { method: 'PATCH', body: JSON.stringify(patch) }),
   };
 }

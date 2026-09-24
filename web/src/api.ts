@@ -7,6 +7,7 @@ export type {
   NewAccountPayload,
   OrderPayload,
   ProvisionInput,
+  SavedStrategyInfo,
   StrategyFile,
   StrategyLoadOutcome,
   TerminalBackend,
@@ -54,5 +55,8 @@ export const api: TerminalBackend = {
   stopBot: (closePositions) => backend.stopBot(closePositions),
   loadStrategy: (files) => backend.loadStrategy(files),
   useBuiltinStrategy: (strategy) => backend.useBuiltinStrategy(strategy),
+  savedStrategy: () => backend.savedStrategy(),
+  useSavedStrategy: () => backend.useSavedStrategy(),
+  forgetSavedStrategy: () => backend.forgetSavedStrategy(),
   configureExpert: (patch) => backend.configureExpert(patch),
 };

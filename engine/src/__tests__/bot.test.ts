@@ -33,7 +33,8 @@ function harness() {
   const bot = new BotEngine(accounts, journal);
   // These cases are about multi-position mechanics, so they pin the lot size
   // rather than letting equity-based sizing choose it. Sizing has its own suite.
-  bot.updateConfig({ sizing: 'fixed' });
+  // These cases exercise the signal models' multi-leg machinery.
+  bot.updateConfig({ sizing: 'fixed', strategy: 'adaptive-scalp' });
   return { journal, accounts, bot };
 }
 

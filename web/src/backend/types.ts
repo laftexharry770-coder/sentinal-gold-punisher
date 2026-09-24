@@ -50,6 +50,15 @@ export interface Subscription {
 /** A compile or load outcome the Strategy card can show as it is. */
 export type StrategyLoadOutcome = LoadStrategyResult;
 
+/** The EA last uploaded, kept so it can be switched back to without uploading again. */
+export interface SavedStrategyInfo {
+  fileName: string;
+  kind: 'mql5' | 'ex5';
+  /** True while it is the strategy in use. */
+  active: boolean;
+  savedAt: number;
+}
+
 /**
  * Everything the terminal needs from its execution host.
  *
@@ -98,8 +107,14 @@ export interface TerminalBackend {
   stopBot(closePositions?: boolean): Promise<BotView>;
   /** Makes uploaded .mq5 (+ .mqh) or .ex5 files the strategy. */
   loadStrategy(files: StrategyFile[]): Promise<StrategyLoadOutcome>;
-  /** Back to the built-in models. */
+  /** Back to a built-in model; the uploaded EA stays saved. */
   useBuiltinStrategy(strategy?: BotConfig['strategy']): Promise<BotView>;
+  /** The uploaded EA kept for switching back to, if any. */
+  savedStrategy(): Promise<SavedStrategyInfo | null>;
+  /** Makes the saved EA the strategy again. */
+  useSavedStrategy(): Promise<StrategyLoadOutcome>;
+  /** Forgets the saved EA (a built-in model keeps trading). */
+  forgetSavedStrategy(): Promise<void>;
   /** New EA inputs or chart timeframe; a running EA restarts with them. */
   configureExpert(patch: { inputs?: Record<string, string | number | boolean>; timeframe?: number }): Promise<BotView>;
 }

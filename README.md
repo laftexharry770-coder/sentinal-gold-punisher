@@ -50,10 +50,25 @@ dialled when an order is due.
 
 ## Strategies — change them any time
 
-Settings → **Strategy**. Whatever is chosen is kept for the next visit (browser) or the
-next restart (server).
+Choose on the MT5 Control screen (**Burst** or **your EA**) or Settings → **Strategy**.
+An uploaded EA stays saved while Burst trades, so switching back needs no second upload;
+whatever is chosen is kept for the next visit (browser) or the next restart (server).
 
-- **Built-in models** — adaptive scalp, momentum breakout, mean reversion, with the
+- **Burst** (the default) trades the way the MT5 Control recording does. When the book is
+  flat it opens a burst of **0.01-lot positions all at once** — **16 for every $10 of
+  balance, never more than 50** — in the direction of the trend (EMA 20 over EMA 50 on M1,
+  with a minimum gap so a flat market opens nothing). Every position carries a **take
+  profit 5.00 from its entry, set at the broker**, so they close together even with the
+  terminal closed; there is **no stop loss** unless you set one. The moment the last one
+  has closed, the next burst goes out, sized from the new balance. In the recording that
+  took $10 → 16 positions → $90 → 50 positions → $341 → 50 positions → $591. Every number
+  is editable (lot, positions per balance step, cap, take profit, optional stop, direction:
+  trend / buy only / sell only, trend timeframe and EMAs, delay before the next burst), and
+  the Settings card shows, for your balance, what the next burst makes at take profit —
+  and how small a move against it costs the whole balance when it has no stop. Followers
+  copy each position; a follower with **balance-ratio** sizing opens the burst its own
+  balance calls for instead (a $5 follower opens 8).
+- **Other built-in models** — adaptive scalp, momentum breakout, mean reversion, with the
   multi-position, basket and zero-loss controls described below.
 - **An `.mq5` expert advisor** (e.g. `Angel_Bot.mq5`) — drop the file in, with any
   `.mqh` headers it includes. Sentinal compiles it and runs it on the master account:
@@ -249,6 +264,12 @@ to the accounts it needs with MetaApi's Token Management API. The server keeps i
 environment, and refuses to send real orders without an `ACCESS_KEY`.
 
 ## Risk note
+
+Burst with no stop loss is the highest-risk way this terminal can trade: with $10 and 16
+positions of 0.01, a move of about $0.63 against the burst costs the whole balance, and
+only the broker's stop-out ends it. The recording shows a market that ran straight to the
+take profit three times; a market that turns first ends the account. Run it on a demo
+account before real money, and consider the optional stop.
 
 Connecting alone never trades: fills are simulated against your broker's real quotes
 until you turn on **Send real orders to MetaTrader** (or `LIVE_EXECUTION=true`). With it

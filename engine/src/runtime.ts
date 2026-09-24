@@ -56,6 +56,7 @@ export interface Runtime {
 }
 
 const MODEL_NAMES: Record<string, string> = {
+  burst: 'Burst',
   'adaptive-scalp': 'Adaptive scalp',
   momentum: 'Momentum breakout',
   'mean-reversion': 'Mean reversion',
