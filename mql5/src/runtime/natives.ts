@@ -89,6 +89,9 @@ const RC = {
   CONNECTION: 10031,
 };
 
+/** The pretend boot time the uptime counters run from: a day before this runtime loaded. */
+const UPTIME_EPOCH = Date.now() - 86_400_000;
+
 /** Struct constructors from the compiled program, for values natives return. */
 export interface StructFactory {
   (name: string): Record<string, unknown> & { $reset(): unknown };
@@ -281,12 +284,22 @@ export class Natives {
     return this.state.stopFlag;
   }
 
+  private clock(): number {
+    return this.host.clockMs ? this.host.clockMs() : Date.now();
+  }
+
+  /**
+   * Milliseconds of machine uptime, as MetaTrader reports it: a large number
+   * that wraps every 49.7 days. EAs throttle with `GetTickCount() - last > n`
+   * starting from last = 0, which only works when the count is already large
+   * — so it is never reset to zero when the EA starts.
+   */
   GetTickCount(): number {
-    return (Date.now() - this.state.startedAt) >>> 0;
+    return (this.clock() - UPTIME_EPOCH) >>> 0;
   }
 
   GetTickCount64(): number {
-    return Date.now() - this.state.startedAt;
+    return this.clock() - UPTIME_EPOCH;
   }
 
   GetMicrosecondCount(): number {
@@ -324,6 +337,23 @@ export class Natives {
 
   ExpertRemove(): void {
     this.state.requestStop();
+  }
+
+  /** Tester statistics exist only inside the Strategy Tester; live, they read as zero. */
+  TesterStatistics(): number {
+    return 0;
+  }
+
+  TesterWithdrawal(): boolean {
+    return false;
+  }
+
+  TesterDeposit(): boolean {
+    return false;
+  }
+
+  TesterStop(): void {
+    /* no tester to stop */
   }
 
   TerminalClose(): boolean {

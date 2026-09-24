@@ -282,7 +282,7 @@ export function ControlPanel({ session, onOpenSettings }: { session: SessionStat
         </div>
       </header>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* MT5 account */}
         <section className="card p-5">
           <div className="flex items-center justify-between gap-3">

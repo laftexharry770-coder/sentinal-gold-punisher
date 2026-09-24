@@ -18,9 +18,9 @@ import {
   type TradeRequest,
   type TradeResult,
 } from '@sentinal/mql5';
-import type { Deal, PendingOrder, PendingType, Position, StrategyInfo, StrategyInput, SymbolSpec, Tick } from '@sentinal/shared';
+import { roundPrice, type Deal, type PendingOrder, type PendingType, type Position, type StrategyInfo, type StrategyInput, type SymbolSpec, type Tick } from '@sentinal/shared';
 import { Emitter } from '../emitter.js';
-import type { OpenRequest, TradingAccount } from '../broker/account.js';
+import type { OpenRequest, PendingRequest, TradingAccount } from '../broker/account.js';
 import type { Journal } from '../journal.js';
 import type { CopyTradeEngine } from './copier.js';
 
@@ -116,6 +116,10 @@ export class ExpertRunner extends Emitter {
   private loadedAt: number | null = null;
   private timeframe = 1;
   private lastServerTime = 0;
+  /** The last quote's time and when it arrived, for the EA's millisecond clock. */
+  private lastTickAt = 0;
+  private lastTickWall = 0;
+  private lastClock = 0;
   private stopUnsub: (() => void) | null = null;
   /** Set by the bot: false blocks the EA's orders as AutoTrading-off would. */
   tradingAllowed = true;
@@ -248,10 +252,18 @@ export class ExpertRunner extends Emitter {
     if (tick.symbol !== master.symbol) return;
     const serverTime = tick.time / 1000 + master.serverOffset;
     this.lastServerTime = Math.floor(serverTime);
+    this.lastTickAt = tick.time;
+    this.lastTickWall = Date.now();
     const point = master.spec().point ?? master.spec().tickSize;
     this.market.onQuote(tick.symbol, tick.bid, tick.ask, serverTime, point);
     if (this.loading > 0) return;
     this.expert.tick();
+  }
+
+  clockMs(): number {
+    const now = this.lastTickAt > 0 ? this.lastTickAt + (Date.now() - this.lastTickWall) : Date.now();
+    this.lastClock = Math.max(this.lastClock, now);
+    return this.lastClock;
   }
 
   /** Resolves once the expert has worked through every queued event. */
@@ -494,6 +506,9 @@ export class ExpertRunner extends Emitter {
         return { bid: q.bid, ask: q.ask, last: q.bid, time: Math.floor(serverMs / 1000), timeMsc: serverMs, volume: 1 };
       },
       serverTime: () => runner.lastServerTime || Math.floor(Date.now() / 1000) + master.serverOffset,
+      // Market time, running on between quotes: live it is the wall clock; a
+      // replay faster than real time keeps an EA's millisecond throttles honest.
+      clockMs: () => runner.clockMs(),
       serverOffset: () => master.serverOffset,
       account: () => runner.hostAccount(master),
       connected: () => master.connected,
@@ -508,6 +523,10 @@ export class ExpertRunner extends Emitter {
       historyOrders: () => [],
       async orderSend(req: TradeRequest): Promise<TradeResult> {
         const dispatcher = runner.dispatcher();
+        // Prices exactly on the broker's tick grid: an EA's `open - 0.2` is
+        // 4355.820000000001 in floating point, which a trade server refuses.
+        const spec = master.spec(req.symbol || master.symbol);
+        const px = (v: number): number | null => (v > 0 ? roundPrice(spec, v) : null);
         switch (req.action) {
           case TRADE_ACTION.DEAL: {
             if (req.position > 0) {
@@ -525,8 +544,8 @@ export class ExpertRunner extends Emitter {
               symbol: req.symbol || master.symbol,
               side: req.type === 0 ? 'buy' : 'sell',
               volume: req.volume,
-              stopLoss: req.sl > 0 ? req.sl : null,
-              takeProfit: req.tp > 0 ? req.tp : null,
+              stopLoss: px(req.sl),
+              takeProfit: px(req.tp),
               origin: 'bot',
               comment: req.comment,
               magic: req.magic,
@@ -539,8 +558,8 @@ export class ExpertRunner extends Emitter {
           case TRADE_ACTION.SLTP: {
             const position = byTicket(req.position);
             if (!position) return failure(RETCODE.POSITION_CLOSED, `position #${req.position} is not open`);
-            const sl = req.sl > 0 ? req.sl : null;
-            const tp = req.tp > 0 ? req.tp : null;
+            const sl = px(req.sl);
+            const tp = px(req.tp);
             if (sl === position.stopLoss && tp === position.takeProfit) return { ...done({}), retcode: RETCODE.NO_CHANGES };
             const result = dispatcher ? await dispatcher.modify(master, position.id, sl, tp) : await master.submitModify(position.id, sl, tp);
             return result.ok ? done({}) : failure(retcodeFor(result.error), result.error);
@@ -548,37 +567,37 @@ export class ExpertRunner extends Emitter {
           case TRADE_ACTION.PENDING: {
             const type = PENDING_TYPES[req.type];
             if (!type) return failure(RETCODE.INVALID, 'invalid pending order type');
-            const result = await master.submitPending({
+            const pending: PendingRequest = {
               symbol: req.symbol || master.symbol,
               type,
               volume: req.volume,
-              openPrice: req.price,
-              stopLimitPrice: req.stoplimit > 0 ? req.stoplimit : null,
-              stopLoss: req.sl > 0 ? req.sl : null,
-              takeProfit: req.tp > 0 ? req.tp : null,
+              openPrice: px(req.price) ?? req.price,
+              stopLimitPrice: px(req.stoplimit),
+              stopLoss: px(req.sl),
+              takeProfit: px(req.tp),
               expiration: req.expiration > 0 ? (req.expiration - master.serverOffset) * 1000 : null,
               magic: req.magic,
               comment: req.comment,
-            });
+            };
+            // Mirrored onto every follower, so each broker fills its own copy at this price.
+            const result = dispatcher ? await dispatcher.placePending(master, pending) : await master.submitPending(pending);
             if (!result.ok) return failure(retcodeFor(result.error), result.error);
             return done({ order: result.order.ticket, volume: result.order.volume, price: result.order.openPrice });
           }
           case TRADE_ACTION.MODIFY: {
             const order = orderByTicket(req.order);
             if (!order) return failure(RETCODE.INVALID_ORDER, `order #${req.order} not found`);
-            const result = await master.modifyPending(
-              order.id,
-              req.price,
-              req.sl > 0 ? req.sl : null,
-              req.tp > 0 ? req.tp : null,
-              req.expiration > 0 ? (req.expiration - master.serverOffset) * 1000 : null,
-            );
+            const expiration = req.expiration > 0 ? (req.expiration - master.serverOffset) * 1000 : null;
+            const price = px(req.price) ?? req.price;
+            const result = dispatcher
+              ? await dispatcher.modifyPending(master, order.id, price, px(req.sl), px(req.tp), expiration)
+              : await master.modifyPending(order.id, price, px(req.sl), px(req.tp), expiration);
             return result.ok ? done({ order: order.ticket }) : failure(retcodeFor(result.error), result.error);
           }
           case TRADE_ACTION.REMOVE: {
             const order = orderByTicket(req.order);
             if (!order) return failure(RETCODE.INVALID_ORDER, `order #${req.order} not found`);
-            const result = await master.cancelPending(order.id);
+            const result = dispatcher ? await dispatcher.cancelPending(master, order.id) : await master.cancelPending(order.id);
             return result.ok ? done({ order: order.ticket }) : failure(retcodeFor(result.error), result.error);
           }
           case TRADE_ACTION.CLOSE_BY: {

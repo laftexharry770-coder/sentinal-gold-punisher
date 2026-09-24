@@ -214,7 +214,7 @@ export function BotControlCenter() {
         />
       </Card>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Card
           title="Zero-loss recovery queue"
           subtitle="Recoveries release only when the projected net clears the deficit"

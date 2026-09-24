@@ -167,7 +167,13 @@ export class AccountManager extends Emitter {
 
   onTick(tick: Tick): void {
     this.lastTick = tick;
-    for (const account of this.accounts.values()) account.onTick(tick);
+    // One price for everyone at the same instant. Followers act on it first:
+    // each follower's broker runs its copies' own stops, as a real server
+    // does, and the copier then closes only what is still open.
+    const all = [...this.accounts.values()];
+    for (const account of all) account.takeQuote(tick);
+    for (const account of all) if (account.config.role !== 'master') account.onTick(tick);
+    for (const account of all) if (account.config.role === 'master') account.onTick(tick);
   }
 
   allPositions(): Position[] {

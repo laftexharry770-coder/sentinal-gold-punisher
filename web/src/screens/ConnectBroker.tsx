@@ -366,7 +366,7 @@ export function ConnectBroker({ session }: { session: SessionState }) {
   const valid = form.name.trim() && form.login.trim() && form.server.trim();
 
   return (
-    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
+    <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
       <div className="space-y-3">
         <Card
           title="Linked accounts"

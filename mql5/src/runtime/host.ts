@@ -226,6 +226,12 @@ export interface ExpertHost {
   quote(symbol: string): HostQuote | null;
   /** Time of the last quote, server time (TimeCurrent). */
   serverTime(): number;
+  /**
+   * The machine clock in ms, for GetTickCount and friends. Hosts that replay
+   * the market faster than real time drive it from the quotes; others leave
+   * it out and the wall clock is used.
+   */
+  clockMs?(): number;
   /** Server time minus UTC, seconds. */
   serverOffset(): number;
   account(): HostAccount;

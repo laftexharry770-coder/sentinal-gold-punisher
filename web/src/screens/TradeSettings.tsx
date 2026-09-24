@@ -121,7 +121,7 @@ function BurstCard({ draft, onChange, balance }: { draft: Draft['burst']; onChan
       actions={<Chip tone={draft.stopLossPrice ? 'neutral' : 'loss'}>{draft.stopLossPrice ? `stop ${draft.stopLossPrice.toFixed(2)}` : 'no stop loss'}</Chip>}
       bodyClass="p-4 space-y-4"
     >
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <NumberField label="Lot per position" value={draft.lot} onChange={(v) => set('lot', v)} step={0.01} min={0.01} suffix="lot" />
         <NumberField
           label="Positions per step"
@@ -182,7 +182,7 @@ function BurstCard({ draft, onChange, balance }: { draft: Draft['burst']; onChan
       </div>
 
       {draft.direction === 'trend' && (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
             <label className="label" htmlFor="burst-tf">
               Trend timeframe
@@ -380,7 +380,7 @@ export function TradeSettings() {
 
         {draft.sizing === 'risk-percent' && (
           <>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <NumberField
                 label="Risk per leg"
                 value={draft.riskPercent}
@@ -455,7 +455,7 @@ export function TradeSettings() {
         actions={<Chip tone="accent">{draft.entriesPerSignal} legs / signal</Chip>}
         bodyClass="p-4 space-y-4"
       >
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           <NumberField
             label="Max concurrent positions"
             value={draft.maxConcurrentPositions}
@@ -586,7 +586,7 @@ export function TradeSettings() {
           onChange={(v) => setZeroLoss('enabled', v)}
         />
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           <NumberField
             label="Recovery multiplier"
             value={draft.zeroLoss.recoveryMultiplier}

@@ -64,6 +64,8 @@ export interface PendingRequest {
   magic?: number;
   comment?: string;
   clientId?: string | null;
+  /** What a fill becomes: 'copy' for an order mirrored from a master. */
+  origin?: PositionOrigin;
 }
 
 export type PendingResult = { ok: true; order: PendingOrder } | { ok: false; error: string };
@@ -75,6 +77,26 @@ let ticketSeq = 50_000_000;
 function nextTicket(): number {
   ticketSeq += 1;
   return ticketSeq;
+}
+
+/**
+ * MT5's placement rule: a stop order waits beyond the price and a limit order
+ * short of it, at least the broker's stops level away. The broker refuses the
+ * rest with "invalid price" rather than filling them at once.
+ */
+function pendingPriceProblem(type: PendingType, price: number, tick: Tick | null, spec: SymbolSpec): string | null {
+  if (!tick || tick.symbol !== spec.symbol) return null;
+  const gap = (spec.stopsLevel ?? 0) * (spec.point ?? spec.tickSize);
+  const eps = spec.tickSize / 2;
+  const ok =
+    type === 'buy-stop' || type === 'buy-stop-limit'
+      ? price - tick.ask >= gap - eps
+      : type === 'sell-stop' || type === 'sell-stop-limit'
+        ? tick.bid - price >= gap - eps
+        : type === 'buy-limit'
+          ? tick.ask - price >= gap - eps
+          : price - tick.bid >= gap - eps;
+  return ok ? null : `invalid price ${price} for a ${type.replace(/-/g, ' ')} (bid ${tick.bid}, ask ${tick.ask})`;
 }
 
 /**
@@ -405,6 +427,8 @@ export class TradingAccount extends Emitter {
   async submitPending(req: PendingRequest): Promise<PendingResult> {
     if (!this.connected) return { ok: false, error: `${this.config.name} is not connected` };
     const spec = getSymbolSpec(req.symbol);
+    const problem = pendingPriceProblem(req.type, roundPrice(spec, req.openPrice), this.lastTick, spec);
+    if (problem) return { ok: false, error: problem };
     const volume = roundLot(spec, req.volume);
     const ticket = nextTicket();
     const order: PendingOrder = {
@@ -423,6 +447,7 @@ export class TradingAccount extends Emitter {
       comment: req.comment ?? '',
       time: this.lastTick?.time ?? Date.now(),
       clientId: req.clientId ?? null,
+      origin: req.origin,
     };
     this.orders.set(order.id, order);
     this.emit('orders', this.listOrders(), this);
@@ -446,7 +471,10 @@ export class TradingAccount extends Emitter {
   ): Promise<ActionResult> {
     const order = this.orders.get(id);
     if (!order) return { ok: false, error: 'order not found' };
-    order.openPrice = roundPrice(getSymbolSpec(order.symbol), openPrice);
+    const spec = getSymbolSpec(order.symbol);
+    const problem = pendingPriceProblem(order.type, roundPrice(spec, openPrice), this.lastTick, spec);
+    if (problem) return { ok: false, error: problem };
+    order.openPrice = roundPrice(spec, openPrice);
     order.stopLoss = stopLoss;
     order.takeProfit = takeProfit;
     if (expiration !== undefined) order.expiration = expiration;
@@ -498,7 +526,7 @@ export class TradingAccount extends Emitter {
           volume: order.volume,
           stopLoss: order.stopLoss,
           takeProfit: order.takeProfit,
-          origin: 'bot',
+          origin: order.origin ?? 'bot',
           comment: order.comment,
           magic: order.magic,
           clientId: order.clientId,
@@ -515,6 +543,11 @@ export class TradingAccount extends Emitter {
   /* --------------------------------------------------------------- */
   /* Valuation                                                        */
   /* --------------------------------------------------------------- */
+
+  /** Takes a quote without acting on it yet, so every account prices at the same instant. */
+  takeQuote(tick: Tick): void {
+    this.lastTick = tick;
+  }
 
   onTick(tick: Tick): void {
     this.lastTick = tick;

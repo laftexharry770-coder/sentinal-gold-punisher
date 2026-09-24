@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { BotConfig, StrategyInfo, StrategyInput } from '@sentinal/shared';
 import sampleExpert from '../../../mql5/samples/Sentinal.mq5?raw';
 import { api, type StrategyFile, type StrategyLoadOutcome } from '../api';
+import { isAngelBot } from '../bundledStrategies';
 import { readStrategyFile } from '../strategyFiles';
 import { StrategySwitch, useSavedStrategy } from './StrategySwitch';
 import { toast } from './Toast';
@@ -326,7 +327,7 @@ export function StrategyCard({ strategy, config }: { strategy: StrategyInfo | nu
       }
       bodyClass="p-4 space-y-4"
     >
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div
           className="dropzone flex flex-col items-center justify-center gap-2 px-4 py-6 text-center"
           data-active={dragging}
@@ -384,6 +385,13 @@ export function StrategyCard({ strategy, config }: { strategy: StrategyInfo | nu
                 <span className="font-semibold text-ink">{strategy.fileName}</span> runs inside Sentinal on the master account: its
                 OrderSend goes to the master and every follower in the same instant.
               </p>
+              {isAngelBot(strategy.fileName) && (
+                <p>
+                  Its buy stop and sell stop are placed on every follower at the same prices and moved with the master's, so each
+                  broker fills its own copy the moment price gets there. At the default 0.10 lot each position moves $10 per $1 of
+                  gold — lower <span className="font-mono">InpLots</span> below for a small account.
+                </p>
+              )}
               <p className="tabular text-[var(--color-ink-muted)]">
                 {strategy.inputs.length} inputs · {strategy.ticks.toLocaleString()} ticks processed
                 {strategy.lastTickMs !== null ? ` · ${strategy.lastTickMs.toFixed(3)} ms per OnTick` : ''}

@@ -26,6 +26,7 @@ vi.mock('../backend/metaapiSdk', async (importOriginal) => ({
 
 const { createLocalBackend } = await import('../backend/local');
 const { saveStrategyFiles } = await import('../backend/persist');
+const { ANGEL_BOT } = await import('../bundledStrategies');
 
 const sample = readFileSync(fileURLToPath(new URL('../../../mql5/samples/Sentinal.mq5', import.meta.url)), 'utf8');
 
@@ -154,5 +155,49 @@ describe('the in-browser backend over MetaApi', () => {
     await backend.signOut();
     await again.signOut();
     await third.signOut();
+  });
+
+  it('runs the bundled Angel Bot on the master and holds the same stop orders on the follower', async () => {
+    const { masterConn, followerConn } = broker();
+    const backend = createLocalBackend();
+    await backend.connectBroker({
+      token: 'token',
+      masterId: 'ma-master',
+      followerIds: ['ma-follow'],
+      symbol: '',
+      remember: false,
+      liveExecution: true,
+      followerMultiplier: 1,
+    });
+    const outcome = await backend.loadStrategy([ANGEL_BOT]);
+    expect(outcome.kind === 'mql5' && outcome.result.ok).toBe(true);
+    await backend.configureExpert({ inputs: { InpLots: 0.01 } });
+    await backend.startBot();
+
+    const stops = (conn: typeof masterConn) =>
+      conn.state.orders
+        .filter((o) => o.type === 'ORDER_TYPE_BUY_STOP' || o.type === 'ORDER_TYPE_SELL_STOP')
+        .map((o) => `${o.type} ${o.openPrice}`)
+        .sort();
+    let time = Date.now();
+    let bid = 3300;
+    for (let i = 0; i < 400 && stops(masterConn).length < 2; i += 1) {
+      time += 700;
+      bid = +(bid + (i % 2 ? 0.03 : -0.02)).toFixed(2);
+      await followerConn.quote('XAUUSD', bid, +(bid + 0.2).toFixed(2), time);
+      await masterConn.quote('XAUUSDm', bid, +(bid + 0.2).toFixed(2), time);
+      await settle(0);
+    }
+    await settle(30);
+    // A buy stop above and a sell stop below, on both brokers, at the same prices.
+    expect(stops(masterConn)).toHaveLength(2);
+    expect(stops(followerConn)).toEqual(stops(masterConn));
+    const sentStops = followerConn.sent.filter((s) => s.kind === 'createStopBuyOrder' || s.kind === 'createStopSellOrder');
+    expect(sentStops.every((s) => s.symbol === 'XAUUSD' && s.volume === 0.01)).toBe(true);
+    const clientIds = (conn: typeof masterConn) => conn.state.orders.map((o) => o.clientId).sort();
+    expect(clientIds(followerConn)).toEqual(clientIds(masterConn));
+
+    await backend.stopBot();
+    await backend.signOut();
   });
 });

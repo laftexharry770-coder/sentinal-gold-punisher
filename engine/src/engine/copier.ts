@@ -10,10 +10,11 @@ import {
   type CopySettings,
   type DispatchConfig,
   type DispatchReport,
+  type PendingType,
   type Position,
   type Side,
 } from '@sentinal/shared';
-import type { ActionResult, OpenRequest, OpenResult, TradingAccount } from '../broker/account.js';
+import type { ActionResult, OpenRequest, OpenResult, PendingRequest, PendingResult, TradingAccount } from '../broker/account.js';
 import type { AccountManager } from '../broker/manager.js';
 import type { Journal } from '../journal.js';
 import { uid } from '../util.js';
@@ -38,6 +39,43 @@ interface Link {
   accountId: string;
   positionId: string;
 }
+
+/** The levels a follower's copy of a pending order should be at. */
+interface PendingLevels {
+  price: number;
+  stopLoss: number | null;
+  takeProfit: number | null;
+}
+
+/** One follower's copy of a master's pending order, kept in step with it. */
+interface PendingCopy {
+  account: TradingAccount;
+  orderId: string | null;
+  reverse: boolean;
+  sent: PendingLevels;
+  want: PendingLevels;
+  inflight: boolean;
+  failures: number;
+  /** Set when the follower's broker filled its copy. */
+  positionId: string | null;
+}
+
+/** A master's pending order and every follower's copy of it. */
+interface PendingLink {
+  masterId: string;
+  masterOrderId: string | null;
+  clientId: string;
+  copies: PendingCopy[];
+  masterPositionId: string | null;
+}
+
+/** A pending order of the opposite direction at the same price, for reversed copies. */
+const REVERSED_PENDING: Partial<Record<PendingType, PendingType>> = {
+  'buy-stop': 'sell-limit',
+  'sell-stop': 'buy-limit',
+  'buy-limit': 'sell-stop',
+  'sell-limit': 'buy-stop',
+};
 
 /** Performance clock where available, so sub-millisecond gaps are visible. */
 function now(): number {
@@ -71,6 +109,8 @@ export class CopyTradeEngine extends Emitter {
   private readonly closing = new Set<string>();
   private readonly modifying = new Set<string>();
   private readonly reports: DispatchReport[] = [];
+  /** Mirrored pending orders, by the client id shared by the master's order and its copies. */
+  private readonly pendingByClient = new Map<string, PendingLink>();
 
   config: DispatchConfig = { ...DEFAULT_BOT_CONFIG.dispatch };
   /** Copy positions the engine did not open itself (manual trades, an EA running in MT5). */
@@ -447,10 +487,295 @@ export class CopyTradeEngine extends Emitter {
   }
 
   /* ------------------------------------------------------------------ */
+  /* Pending orders: mirrored, so every broker fills at the same price    */
+  /* ------------------------------------------------------------------ */
+
+  /** The follower's copy of a master's pending order, or null if it should not have one. */
+  private mirrorPending(master: TradingAccount, slave: TradingAccount, req: PendingRequest): PendingRequest | null {
+    const settings = slave.config.copy;
+    if (!settings.enabled || !this.allowed(settings, req.symbol)) return null;
+    let type = req.type;
+    let sl = req.stopLoss ?? null;
+    let tp = req.takeProfit ?? null;
+    if (settings.reverse) {
+      const reversed = REVERSED_PENDING[type];
+      // A stop-limit has no mirror image; its fill is copied instead.
+      if (!reversed) return null;
+      type = reversed;
+      [sl, tp] = [tp, sl];
+    }
+    const symbol = this.followerSymbol(slave, req.symbol);
+    const spec = slave.spec(symbol);
+    return {
+      symbol,
+      type,
+      volume: this.resolveVolume(settings, master, slave, req.volume, symbol),
+      openPrice: roundPrice(spec, req.openPrice),
+      stopLimitPrice: settings.reverse ? null : (req.stopLimitPrice ?? null),
+      stopLoss: settings.copyStopLoss && sl ? roundPrice(spec, sl) : null,
+      takeProfit: settings.copyTakeProfit && tp ? roundPrice(spec, tp) : null,
+      expiration: req.expiration ?? null,
+      magic: req.magic,
+      comment: req.comment,
+      clientId: req.clientId,
+      origin: 'copy',
+    };
+  }
+
+  private followerLevels(copy: PendingCopy, price: number, stopLoss: number | null, takeProfit: number | null): PendingLevels {
+    const settings = copy.account.config.copy;
+    const sl = copy.reverse ? takeProfit : stopLoss;
+    const tp = copy.reverse ? stopLoss : takeProfit;
+    return { price, stopLoss: settings.copyStopLoss ? sl : null, takeProfit: settings.copyTakeProfit ? tp : null };
+  }
+
+  /**
+   * Places a pending order on the master and the same order on every follower
+   * in the same instant. When price reaches it, each broker fills its own copy
+   * at that price — nobody waits for the master's fill to be reported.
+   */
+  async placePending(master: TradingAccount, req: PendingRequest): Promise<PendingResult> {
+    const followers = this.followers(master);
+    if (this.config.mode !== 'simultaneous' || followers.length === 0) return master.submitPending(req);
+
+    const clientId = req.clientId ?? newClientId();
+    const masterReq: PendingRequest = { ...req, clientId };
+    const plans = followers
+      .map((account) => ({ account, req: this.mirrorPending(master, account, masterReq) }))
+      .filter((p): p is { account: TradingAccount; req: PendingRequest } => p.req !== null);
+    const link: PendingLink = { masterId: master.id, masterOrderId: null, clientId, copies: [], masterPositionId: null };
+    for (const plan of plans) {
+      const levels = { price: plan.req.openPrice, stopLoss: plan.req.stopLoss ?? null, takeProfit: plan.req.takeProfit ?? null };
+      link.copies.push({
+        account: plan.account,
+        orderId: null,
+        reverse: plan.account.config.copy.reverse,
+        sent: { ...levels },
+        want: { ...levels },
+        inflight: true,
+        failures: 0,
+        positionId: null,
+      });
+    }
+    this.pendingByClient.set(clientId, link);
+
+    const firstSend = now();
+    const masterPromise = master.submitPending(masterReq).then((result) => ({ result, ackMs: now() - firstSend }));
+    const followerPromises = plans.map((plan, i) => {
+      const sent = now();
+      return plan.account.submitPending(plan.req).then(
+        (result) => ({ copy: link.copies[i]!, result, ackMs: now() - sent }),
+        (err: unknown) => ({ copy: link.copies[i]!, result: { ok: false, error: err instanceof Error ? err.message : String(err) } as PendingResult, ackMs: now() - sent }),
+      );
+    });
+    const sendSpreadMs = now() - firstSend;
+    const masterDone = await masterPromise;
+    if (masterDone.result.ok) link.masterOrderId = masterDone.result.order.id;
+
+    void Promise.all(followerPromises).then((outcomes) => {
+      for (const { copy, result } of outcomes) {
+        copy.inflight = false;
+        if (!result.ok) {
+          copy.failures = 99;
+          this.journal.write('warn', copy.account.id, `Pending copy rejected by ${copy.account.config.name}: ${result.error}`);
+          continue;
+        }
+        copy.orderId = result.order.id;
+        if (!masterDone.result.ok) {
+          // The master's broker refused the order: its copies must not stand alone.
+          void copy.account.cancelPending(result.order.id);
+          continue;
+        }
+        this.pumpPending(copy);
+      }
+      if (!masterDone.result.ok) this.pendingByClient.delete(clientId);
+      this.record({
+        id: uid('dsp'),
+        time: Date.now(),
+        action: 'pending',
+        symbol: req.symbol,
+        side: req.type.startsWith('buy') ? 'buy' : 'sell',
+        sendSpreadMs: Math.round(sendSpreadMs * 1000) / 1000,
+        legs: [
+          { accountId: master.id, role: 'master', ok: masterDone.result.ok, ackMs: Math.round(masterDone.ackMs), error: masterDone.result.ok ? null : masterDone.result.error },
+          ...outcomes.map((o) => ({ accountId: o.copy.account.id, role: 'follower' as const, ok: o.result.ok, ackMs: Math.round(o.ackMs), error: o.result.ok ? null : o.result.error })),
+        ],
+      });
+    });
+    if (!masterDone.result.ok && plans.length === 0) this.pendingByClient.delete(clientId);
+    return masterDone.result;
+  }
+
+  private linkOfOrder(master: TradingAccount, orderId: string): PendingLink | undefined {
+    const order = master.listOrders().find((o) => o.id === orderId);
+    const byClient = order?.clientId ? this.pendingByClient.get(order.clientId) : undefined;
+    if (byClient) return byClient;
+    for (const link of this.pendingByClient.values()) if (link.masterId === master.id && link.masterOrderId === orderId) return link;
+    return undefined;
+  }
+
+  /**
+   * Moves a pending order on the master and its copies together. An EA that
+   * trails its stops re-prices them on most ticks, so each follower holds at
+   * most one request in flight and is sent only the newest price.
+   */
+  async modifyPending(
+    master: TradingAccount,
+    orderId: string,
+    price: number,
+    stopLoss: number | null,
+    takeProfit: number | null,
+    expiration?: number | null,
+  ): Promise<ActionResult> {
+    const link = this.linkOfOrder(master, orderId);
+    if (link) {
+      for (const copy of link.copies) {
+        const spec = copy.account.spec(copy.account.symbol);
+        const levels = this.followerLevels(copy, price, stopLoss, takeProfit);
+        copy.want = {
+          price: roundPrice(spec, levels.price),
+          stopLoss: levels.stopLoss ? roundPrice(spec, levels.stopLoss) : null,
+          takeProfit: levels.takeProfit ? roundPrice(spec, levels.takeProfit) : null,
+        };
+        this.pumpPending(copy);
+      }
+    }
+    return master.modifyPending(orderId, price, stopLoss, takeProfit, expiration);
+  }
+
+  private pumpPending(copy: PendingCopy): void {
+    if (copy.inflight || !copy.orderId || copy.positionId || copy.failures >= 3) return;
+    const { want, sent } = copy;
+    if (want.price === sent.price && want.stopLoss === sent.stopLoss && want.takeProfit === sent.takeProfit) return;
+    copy.inflight = true;
+    const target = { ...want };
+    void copy.account.modifyPending(copy.orderId, target.price, target.stopLoss, target.takeProfit).then(
+      (result) => {
+        copy.inflight = false;
+        if (result.ok) {
+          copy.sent = target;
+          copy.failures = 0;
+        } else if (/not found/i.test(result.error)) {
+          copy.failures = 99;
+        } else {
+          copy.failures += 1;
+        }
+        this.pumpPending(copy);
+      },
+      () => {
+        copy.inflight = false;
+        copy.failures += 1;
+      },
+    );
+  }
+
+  /** Cancels a pending order on the master and its copies together. */
+  async cancelPending(master: TradingAccount, orderId: string): Promise<ActionResult> {
+    const link = this.linkOfOrder(master, orderId);
+    if (!link) return master.cancelPending(orderId);
+    this.pendingByClient.delete(link.clientId);
+    const firstSend = now();
+    const masterPromise = master.cancelPending(orderId);
+    const followerPromises = link.copies.map(async (copy) => {
+      if (copy.positionId) {
+        // This follower's broker already filled its copy; the master's never will.
+        const closed = await copy.account.submitClose(copy.positionId, 'copy');
+        if (closed) this.journal.write('copy', copy.account.id, `Closed #${closed.ticket} — the master's order it copied was cancelled before it filled`);
+        return;
+      }
+      if (copy.orderId) await copy.account.cancelPending(copy.orderId);
+    });
+    const sendSpreadMs = now() - firstSend;
+    const result = await masterPromise;
+    void Promise.all(followerPromises).then(() =>
+      this.record({
+        id: uid('dsp'),
+        time: Date.now(),
+        action: 'cancel',
+        symbol: master.symbol,
+        side: null,
+        sendSpreadMs: Math.round(sendSpreadMs * 1000) / 1000,
+        legs: [{ accountId: master.id, role: 'master', ok: result.ok, ackMs: null, error: result.ok ? null : result.error }],
+      }),
+    );
+    return result;
+  }
+
+  /** A fill of a mirrored pending order, on the master or on a follower. */
+  private onPendingFill(link: PendingLink, position: Position, account: TradingAccount): void {
+    if (account.id === link.masterId) {
+      link.masterPositionId = position.id;
+      const links: Link[] = [];
+      for (const copy of link.copies) if (copy.positionId) links.push({ accountId: copy.account.id, positionId: copy.positionId });
+      if (links.length > 0) this.links.set(position.id, [...(this.links.get(position.id) ?? []), ...links]);
+      for (const copy of link.copies) {
+        const p = copy.positionId ? copy.account.getPosition(copy.positionId) : undefined;
+        if (p) p.sourceId = position.id;
+      }
+      // Copies that have not filled within a moment are filled at market,
+      // so no follower is left without the trade.
+      setTimeout(() => this.completePendingFill(link, account, position), 1500);
+      return;
+    }
+    const copy = link.copies.find((c) => c.account.id === account.id);
+    if (!copy) return;
+    copy.positionId = position.id;
+    if (link.masterPositionId) {
+      position.sourceId = link.masterPositionId;
+      this.links.set(link.masterPositionId, [...(this.links.get(link.masterPositionId) ?? []), { accountId: account.id, positionId: position.id }]);
+      this.journal.write('copy', account.id, `Mirrored stop filled at ${position.openPrice.toFixed(2)} with the master`);
+    }
+    this.maybeRetire(link);
+  }
+
+  private async completePendingFill(link: PendingLink, master: TradingAccount, masterPosition: Position): Promise<void> {
+    const req: OpenRequest = {
+      symbol: masterPosition.symbol,
+      side: masterPosition.side,
+      volume: masterPosition.volume,
+      stopLoss: masterPosition.stopLoss,
+      takeProfit: masterPosition.takeProfit,
+      origin: masterPosition.origin,
+      comment: masterPosition.comment,
+      magic: masterPosition.magic,
+      clientId: link.clientId,
+    };
+    // Every lagging follower at once — never one after another.
+    await Promise.all(
+      link.copies.map(async (copy) => {
+        if (copy.positionId || !master.getPosition(masterPosition.id)) return;
+        if (copy.orderId && copy.account.listOrders().some((o) => o.id === copy.orderId)) await copy.account.cancelPending(copy.orderId);
+        // The cancel can lose the race to a fill; that fill is the copy.
+        if (copy.positionId || !master.getPosition(masterPosition.id)) return;
+        const plan = this.mirrorRequest(master, copy.account, req, masterPosition.openPrice, masterPosition.id);
+        if (!plan) return;
+        const result = await copy.account.submit(plan);
+        if (!result.ok) {
+          this.journal.write('warn', copy.account.id, `Copy rejected by ${copy.account.config.name}: ${result.error}`);
+          return;
+        }
+        copy.positionId = result.position.id;
+        this.links.set(masterPosition.id, [...(this.links.get(masterPosition.id) ?? []), { accountId: copy.account.id, positionId: result.position.id }]);
+        this.journal.write('copy', copy.account.id, `Stop copy had not filled — mirrored at market, ${result.position.openPrice.toFixed(2)}`);
+      }),
+    );
+    this.pendingByClient.delete(link.clientId);
+  }
+
+  private maybeRetire(link: PendingLink): void {
+    if (link.masterPositionId && link.copies.every((c) => c.positionId || c.failures >= 99)) this.pendingByClient.delete(link.clientId);
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Events from the master's own stream                                 */
   /* ------------------------------------------------------------------ */
 
   private async onMasterOpen(position: Position, master: TradingAccount): Promise<void> {
+    const pending = position.clientId ? this.pendingByClient.get(position.clientId) : undefined;
+    if (pending) {
+      this.onPendingFill(pending, position, master);
+      return;
+    }
     if (position.origin === 'copy') return;
     if (position.clientId && this.dispatched.has(position.clientId)) return;
     if (position.origin === 'external' && !this.mirrorExternal) return;

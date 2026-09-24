@@ -684,6 +684,10 @@ export class MetaApiAccount extends TradingAccount {
     this.emit('changed', this);
   }
 
+  override takeQuote(): void {
+    // Priced by its own broker's stream, like onTick below.
+  }
+
   override onTick(): void {
     // Each account values itself on its own broker's quotes, which arrive on
     // its own stream; the shared feed carries the master's.
@@ -1019,7 +1023,10 @@ export class MetaApiAccount extends TradingAccount {
     const next = this.toOrder(o);
     if (!next) return;
     const localId = this.orderByTicket.get(ticket);
-    if (localId) next.id = localId;
+    if (localId) {
+      next.id = localId;
+      next.origin = this.orders.get(localId)?.origin;
+    }
     this.orderByTicket.set(ticket, next.id);
     this.orders.set(next.id, next);
     this.emit('orders', this.listOrders(), this);
@@ -1357,8 +1364,8 @@ export class MetaApiAccount extends TradingAccount {
     if (comment) options.comment = comment;
     if (req.magic !== undefined) options.magic = req.magic;
     if (req.expiration) options.expiration = { type: 'ORDER_TIME_SPECIFIED', time: new Date(req.expiration) };
-    const sl = req.stopLoss ?? undefined;
-    const tp = req.takeProfit ?? undefined;
+    const sl = req.stopLoss ? roundPrice(spec, req.stopLoss) : undefined;
+    const tp = req.takeProfit ? roundPrice(spec, req.takeProfit) : undefined;
     const price = roundPrice(spec, req.openPrice);
     try {
       let response: MtTradeResponse;
@@ -1402,6 +1409,7 @@ export class MetaApiAccount extends TradingAccount {
         comment: req.comment ?? '',
         time: this.lastTick?.time ?? Date.now(),
         clientId,
+        origin: req.origin,
       };
       if (ticket) this.orderByTicket.set(ticket, order.id);
       this.orders.set(order.id, order);
@@ -1439,8 +1447,10 @@ export class MetaApiAccount extends TradingAccount {
     if (!order) return { ok: false, error: 'order not found' };
     const connection = this.liveConnection();
     if (typeof connection === 'string') return { ok: false, error: connection };
+    const spec = this.spec(order.symbol);
+    const at = (v: number | null) => (v ? roundPrice(spec, v) : undefined);
     try {
-      await connection.modifyOrder(String(order.ticket), openPrice, stopLoss ?? undefined, takeProfit ?? undefined);
+      await connection.modifyOrder(String(order.ticket), roundPrice(spec, openPrice), at(stopLoss), at(takeProfit));
     } catch (err) {
       return { ok: false, error: describeTradeError(err).error };
     }

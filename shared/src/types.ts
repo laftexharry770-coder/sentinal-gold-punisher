@@ -195,6 +195,8 @@ export interface PendingOrder {
   comment: string;
   time: number;
   clientId: string | null;
+  /** What a fill of this order becomes: 'copy' for an order mirrored from a master. */
+  origin?: PositionOrigin;
 }
 
 /** One deal in the account history, the unit MT5 reports trades in. */
@@ -498,7 +500,7 @@ export interface StrategyInput {
 export interface DispatchReport {
   id: string;
   time: number;
-  action: 'open' | 'close' | 'modify';
+  action: 'open' | 'close' | 'modify' | 'pending' | 'cancel';
   symbol: string;
   side: Side | null;
   /** Time between sending to the first and the last account, milliseconds. */

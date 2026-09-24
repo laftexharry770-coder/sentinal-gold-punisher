@@ -50,9 +50,10 @@ dialled when an order is due.
 
 ## Strategies — change them any time
 
-Choose on the MT5 Control screen (**Burst** or **your EA**) or Settings → **Strategy**.
-An uploaded EA stays saved while Burst trades, so switching back needs no second upload;
-whatever is chosen is kept for the next visit (browser) or the next restart (server).
+Choose on the MT5 Control screen (**Burst**, **Angel Bot** or **your EA**) or Settings →
+**Strategy**. An uploaded EA stays saved while Burst trades, so switching back needs no
+second upload; whatever is chosen is kept for the next visit (browser) or the next
+restart (server).
 
 - **Burst** (the default) trades the way the MT5 Control recording does. When the book is
   flat it opens a burst of **0.01-lot positions all at once** — **16 for every $10 of
@@ -68,6 +69,19 @@ whatever is chosen is kept for the next visit (browser) or the next restart (ser
   and how small a move against it costs the whole balance when it has no stop. Followers
   copy each position; a follower with **balance-ratio** sizing opens the burst its own
   balance calls for instead (a $5 follower opens 8).
+- **Angel Bot** ships with the terminal (`mql5/samples/Angel_Bot.mq5`, v1.10) and runs
+  through the MQL5 runtime below, no upload needed. It brackets price with a **buy stop
+  and a sell stop**, re-prices them as price moves, tops up to its position cap, and trails
+  one stop per basket, with a hard stop, a take profit and a daily target/loss lock. Its
+  pending orders are **mirrored**: each follower holds the same stop orders at the same
+  prices, moved with the master's, so every broker fills its own copy when price reaches
+  it (see Copy trading). Its 28 inputs are editable in Settings; the default lot is
+  **0.10** — $10 per $1 of gold per position — so lower `InpLots` for a small account.
+  The bundled copy carries one fix to v1.10: `ClosePosition` wrote to `gClosingMs[n]`
+  without resizing `gClosingMs`, which MetaTrader 5 answers with *array out of range* and
+  removes the EA the first time it closes a position itself (a trailing exit or the daily
+  lock). The Angel Bot button always loads the bundled copy; an uploaded v1.10 behaves as
+  it would in MT5.
 - **Other built-in models** — adaptive scalp, momentum breakout, mean reversion, with the
   multi-position, basket and zero-loss controls described below.
 - **An `.mq5` expert advisor** (e.g. `Angel_Bot.mq5`) — drop the file in, with any
@@ -205,6 +219,16 @@ the master's broker rejects an order the followers already filled, those copies 
 closed at once. Closes, partial closes and stop changes follow the same path. Trades
 started in MetaTrader itself (mirror mode) are copied as soon as MetaApi reports them.
 
+**Pending orders are mirrored, not waited for.** An EA's buy stop, sell stop or limit
+order is placed on the master and on every follower in the same instant, at the same
+price (with the follower's own sizing; a reversing follower gets the opposite order).
+When the EA moves it, the copies move too; an EA that re-prices on every tick would flood
+a broker, so each follower has at most one modify in flight and is then sent only the
+newest price. Cancels go to all at once. When price reaches the order, every broker fills
+its own copy — no follower waits to hear that the master filled. A follower whose broker
+has not quite reached the price 1.5 s after the master filled is filled at market; a
+follower that filled before the master's order was cancelled has that fill closed.
+
 Every order carries a client id — the same on the master and its copies — so after a
 reload or a server restart the copies are matched to their master again from the
 brokers' own books. A copy whose master closed while nothing was watching is reported,
@@ -220,7 +244,11 @@ Trading off.
   closes are booked from the broker's exit deals. Removing an account from Sentinal never
   closes its positions.
 - **`sim`** — full local simulation: spread, commission, margin, stop/target and pending
-  execution. Demo mode and paper trading use it.
+  execution, with MetaTrader's placement rule (a stop order beyond the price, a limit
+  short of it, at least the stops level away — otherwise *invalid price*). Every account
+  takes each quote at the same instant, and followers' own stops run before the master's
+  close is copied, as on real brokers — so a follower's book matches the master's trade
+  for trade. Demo mode and paper trading use it.
 
 ## Screens
 
@@ -246,7 +274,9 @@ Trading off.
 | `GET/POST/PATCH/DELETE` | `/api/accounts[/:id]` | Link, retag or unlink accounts |
 | `POST` | `/api/accounts/:id/stream-every-tick` | Switch an account to tick-by-tick quotes |
 | `POST` | `/api/strategy` | Upload `{ files: [{ name, content, encoding }] }` — `.mq5`/`.mqh` text, `.ex5` base64 |
-| `POST` | `/api/strategy/builtin` | Back to the built-in models |
+| `POST` | `/api/strategy/builtin` | Back to the built-in models (the uploaded EA stays saved) |
+| `GET/DELETE` | `/api/strategy/saved` | The saved EA, or forget it |
+| `POST` | `/api/strategy/saved/use` | Make the saved EA the strategy again |
 | `PATCH` | `/api/strategy/expert` | EA inputs and chart timeframe |
 | `POST` | `/api/orders` | Manual order, `legs` for multi-entry |
 | `POST` | `/api/positions/:id/close`, `/api/positions/close-all` | Close one leg or a filtered set |
@@ -270,6 +300,12 @@ positions of 0.01, a move of about $0.63 against the burst costs the whole balan
 only the broker's stop-out ends it. The recording shows a market that ran straight to the
 take profit three times; a market that turns first ends the account. Run it on a demo
 account before real money, and consider the optional stop.
+
+Angel Bot at its default 0.10 lot risks about $2 per position at its 2-pip hard stop and
+can hold 5 positions a side; on a $10 account one stopped basket is the balance. It
+re-prices its stop orders often: through MetaApi each re-price is a request, and MetaApi
+limits how many an account may send, so test it on a demo account and watch the journal
+for refused modifies.
 
 Connecting alone never trades: fills are simulated against your broker's real quotes
 until you turn on **Send real orders to MetaTrader** (or `LIVE_EXECUTION=true`). With it
