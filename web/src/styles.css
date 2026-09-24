@@ -41,6 +41,15 @@
   --color-accent-bright: #9aa2ad;
   --color-accent-deep: #3c424b;
 
+  /*
+   * The control panel's own signals, taken from the MT5 Control reference:
+   * a warm flame for section heads, a flat go-green and a stop-red for the
+   * two buttons that matter most.
+   */
+  --color-flame: #f5a524;
+  --color-go: #1fa463;
+  --color-stop: #e5484d;
+
   --color-profit: #22d3a5;
   --color-loss: #ff5c7a;
   --color-gold: #f5b93b;
@@ -334,6 +343,96 @@
   }
 }
 
+@layer components {
+  /* Section heads on the control panel: flame-coloured, set in capitals. */
+  .panel-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-flame);
+  }
+
+  .panel-field-label {
+    font-size: 0.75rem;
+    color: var(--color-ink-muted);
+  }
+
+  .panel-field-value {
+    margin-top: 0.35rem;
+    padding-left: 0.9rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+
+  .btn-go {
+    background: linear-gradient(180deg, #25b870, var(--color-go));
+    border-color: #2cc47a;
+    color: #04130b;
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.22), 0 12px 28px -16px rgba(31, 164, 99, 0.8);
+  }
+  .btn-go:hover:not(:disabled) {
+    background: linear-gradient(180deg, #2cc47a, #1b9459);
+    border-color: #3ad088;
+  }
+  .btn-stop {
+    background: linear-gradient(180deg, #f05a5f, var(--color-stop));
+    border-color: #f06a6e;
+    color: #1d0405;
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.2), 0 12px 28px -16px rgba(229, 72, 77, 0.8);
+  }
+  .btn-stop:hover:not(:disabled) {
+    background: linear-gradient(180deg, #f46d71, #cc3b40);
+    border-color: #f5878a;
+  }
+
+  .toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    max-width: min(26rem, 100%);
+    padding: 0.7rem 1rem;
+    border-radius: 12px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    background: #f1f0f7;
+    color: #16181d;
+    box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(0, 0, 0, 0.08);
+    animation: toast-in 180ms ease-out;
+  }
+  .toast-error {
+    background: #fff1f2;
+    color: #6b0f1c;
+  }
+
+  .dropzone {
+    border: 1.5px dashed #3a4049;
+    border-radius: 14px;
+    background: rgba(13, 16, 20, 0.7);
+    transition: border-color 140ms ease, background 140ms ease;
+  }
+  .dropzone[data-active='true'] {
+    border-color: var(--color-flame);
+    background: rgba(245, 165, 36, 0.06);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @keyframes pulse-ring {
   0% {
     box-shadow: 0 0 0 0 rgba(34, 211, 165, 0.5);
@@ -374,6 +473,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .toast,
   .live-dot,
   .flash-up,
   .flash-down {

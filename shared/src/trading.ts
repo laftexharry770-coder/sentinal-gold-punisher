@@ -175,3 +175,13 @@ export function formatPrice(value: number, digits = 2): string {
 export function formatVolume(volume: number): string {
   return volume.toFixed(2);
 }
+
+/**
+ * Positions in one burst for a balance: `perStep` for every `step` of
+ * balance, never more than `max`. 16 per $10 opens 16 at $10 and 50 (the
+ * cap) at $90 — the counts of the reference recording.
+ */
+export function burstSize(balance: number, perStep: number, step: number, max: number): number {
+  if (!(balance > 0) || !(step > 0) || !(perStep > 0)) return 0;
+  return Math.max(0, Math.min(Math.floor(max), Math.floor((balance / step) * perStep + 1e-9)));
+}

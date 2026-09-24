@@ -2,17 +2,30 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { formatMoney, formatPrice } from '@sentinal/shared';
 import { api } from '../api';
 import type { SessionState } from '../backend/session';
+import { startBotNow, stopBotNow } from './botActions';
 import { onInstallAvailability, promptInstall } from '../pwa';
 import { useTerminal } from '../store';
 
-export type ScreenId = 'dashboard' | 'bot' | 'settings' | 'brokers';
+export type ScreenId = 'control' | 'dashboard' | 'bot' | 'settings' | 'brokers';
 
 type ScreenDef = { id: ScreenId; label: string; short: string; icon: ReactNode };
 
 export const SCREENS: ScreenDef[] = [
   {
+    id: 'control',
+    label: 'MT5 Control',
+    short: 'Control',
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" style={{ height: 18, width: 18 }}>
+        <path d="M3.5 13.5a6.5 6.5 0 1 1 13 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        <path d="m10 13.5 3.2-4.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        <circle cx="10" cy="13.5" r="1.3" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
     id: 'dashboard',
-    label: 'Trading Dashboard',
+    label: 'Chart & Trades',
     short: 'Chart',
     icon: (
       <svg viewBox="0 0 20 20" fill="none" className="h-4.5 w-4.5" style={{ height: 18, width: 18 }}>
@@ -49,8 +62,8 @@ export const SCREENS: ScreenDef[] = [
   },
   {
     id: 'brokers',
-    label: 'Connect Broker',
-    short: 'Brokers',
+    label: 'Accounts & Copying',
+    short: 'Accounts',
     icon: (
       <svg viewBox="0 0 20 20" fill="none" style={{ height: 18, width: 18 }}>
         <path
@@ -117,7 +130,7 @@ function QuoteStrip() {
     <div className="flex items-center gap-3">
       <div className="leading-tight">
         <div className="flex items-baseline gap-2">
-          <span className="text-xs font-bold tracking-wide text-gold">XAUUSD</span>
+          <span className="text-xs font-bold tracking-wide text-gold">{quote.symbol}</span>
           <span className={`tabular text-lg font-semibold transition-colors ${tone}`}>{formatPrice(quote.bid)}</span>
         </div>
         <div className="tabular text-[0.6875rem] text-[var(--color-ink-muted)]">
@@ -161,7 +174,7 @@ function SessionBadge({ session }: { session: SessionState }) {
 
   const demo = session.status === 'demo';
   const live = session.status === 'live' && session.execution === 'broker';
-  const label = demo ? 'Demo data' : `${session.broker.broker} · live`;
+  const label = demo ? 'Demo data' : `${session.broker.broker} · ${session.broker.login}`;
   const tone = demo ? 'border-warn/40 bg-warn/10 text-warn' : 'border-profit/40 bg-profit/10 text-profit';
 
   return (
@@ -170,9 +183,9 @@ function SessionBadge({ session }: { session: SessionState }) {
       {session.status === 'live' && (
         <span
           className={`chip ${live ? 'border-loss/50 bg-loss/15 text-loss' : 'border-[var(--color-line)] bg-[var(--color-surface-2)] text-[var(--color-ink-dim)]'}`}
-          title={live ? 'Orders are sent to your broker' : 'Orders fill locally against broker prices'}
+          title={live ? 'Orders are sent to MetaTrader' : 'Orders fill locally against broker prices'}
         >
-          {live ? 'Live orders' : 'Paper orders'}
+          {live ? 'Real orders' : 'Paper orders'}
         </span>
       )}
       <button
@@ -190,17 +203,15 @@ function SessionBadge({ session }: { session: SessionState }) {
 }
 
 function BotSwitch() {
-  const { config, stats, accounts } = useTerminal();
+  const { strategy, stats, accounts } = useTerminal();
   const [busy, setBusy] = useState(false);
   const running = stats?.running ?? false;
 
   const toggle = async () => {
     setBusy(true);
     try {
-      if (running) await api.stopBot(false);
-      else await api.startBot();
-    } catch {
-      /* the log feed surfaces server-side rejections */
+      if (running) await stopBotNow(false);
+      else await startBotNow();
     } finally {
       setBusy(false);
     }
@@ -210,14 +221,14 @@ function BotSwitch() {
     <button
       onClick={() => void toggle()}
       disabled={busy || accounts.length === 0}
-      className={`btn ${running ? 'btn-sell' : 'btn-primary'} px-3 py-2`}
+      className={`btn ${running ? 'btn-stop' : 'btn-go'} px-3 py-2`}
       title={accounts.length === 0 ? 'Link a broker account first' : undefined}
     >
-      <span className={`h-2 w-2 rounded-full ${running ? 'bg-[#1a0409]' : 'bg-white/90 live-dot'}`} />
-      {running ? 'Disarm' : 'Arm bot'}
-      <span className="hidden text-[0.6875rem] font-medium opacity-80 sm:inline">
-        {config.entriesPerSignal}×/signal
-      </span>
+      <span className={`h-2 w-2 rounded-full ${running ? 'bg-[#1d0405]' : 'bg-white/90 live-dot'}`} />
+      {running ? 'Stop bot' : 'Start bot'}
+      {strategy && (
+        <span className="hidden max-w-[9rem] truncate text-[0.6875rem] font-medium opacity-80 sm:inline">{strategy.name}</span>
+      )}
     </button>
   );
 }
@@ -233,7 +244,7 @@ export function Shell({
   session: SessionState;
   children: ReactNode;
 }) {
-  const { connected, portfolio, stats } = useTerminal();
+  const { connected, portfolio, stats, strategy } = useTerminal();
   const active = SCREENS.find((s) => s.id === screen);
 
   return (
@@ -272,12 +283,12 @@ export function Shell({
           </div>
           <div className="flex items-center gap-2 px-1 text-[0.6875rem] text-[var(--color-ink-muted)]">
             <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-profit live-dot' : 'bg-loss'}`} />
-            {connected ? (session.status === 'demo' ? 'Simulated feed' : 'Broker feed live') : 'Reconnecting…'}
+            {connected ? (session.status === 'demo' ? 'Simulated feed' : 'MetaApi feed live') : 'Reconnecting…'}
           </div>
           {session.status === 'live' && (
             <p className="px-1 text-[0.625rem] leading-snug text-[var(--color-ink-muted)]">
               {session.execution === 'broker'
-                ? "Orders are sent to your broker. Positions shown are the ones on your account."
+                ? 'Orders go to MetaTrader through MetaApi. Positions shown are the ones on your accounts.'
                 : "Prices and balance are your broker's. Orders fill locally against them — nothing reaches MetaTrader."}
             </p>
           )}
@@ -296,7 +307,7 @@ export function Shell({
             <div className="hidden min-w-0 lg:block">
               <h1 className="truncate text-sm font-semibold text-ink">{active?.label}</h1>
               <p className="text-[0.6875rem] text-[var(--color-ink-muted)]">
-                {stats?.running ? 'Engine armed — intrabar execution' : 'Engine idle'}
+                {stats?.running ? `Running ${strategy?.name ?? 'the bot'}` : 'Bot stopped'}
                 {stats?.haltReason ? ` · ${stats.haltReason}` : ''}
               </p>
             </div>

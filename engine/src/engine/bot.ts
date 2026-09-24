@@ -1,9 +1,11 @@
 import { Emitter } from '../emitter.js';
 import {
   DEFAULT_BOT_CONFIG,
+  burstSize,
   type Candle,
   getSymbolSpec,
   riskSizedLeg,
+  roundPrice,
   type BotConfig,
   type BotStats,
   type ClosedTrade,
@@ -12,19 +14,32 @@ import {
   type Signal,
   type Tick,
 } from '@sentinal/shared';
-import type { TradingAccount } from '../broker/account.js';
+import type { OpenRequest, OpenResult, TradingAccount } from '../broker/account.js';
 import type { AccountManager } from '../broker/manager.js';
 import type { Journal } from '../journal.js';
 import { round, startOfDay } from '../util.js';
+import type { CopyTradeEngine } from './copier.js';
+import type { ExpertRunner } from './expert.js';
 import { RecoveryEngine } from './recovery.js';
-import { StrategyEngine } from './strategy.js';
+import { StrategyEngine, TrendTracker } from './strategy.js';
 
 /** Positions the bot itself is responsible for (copies belong to the copier). */
 const BOT_ORIGINS = new Set(['bot', 'recovery']);
 
 export class BotEngine extends Emitter {
-  config: BotConfig = { ...DEFAULT_BOT_CONFIG, zeroLoss: { ...DEFAULT_BOT_CONFIG.zeroLoss } };
+  config: BotConfig = {
+    ...DEFAULT_BOT_CONFIG,
+    zeroLoss: { ...DEFAULT_BOT_CONFIG.zeroLoss },
+    dispatch: { ...DEFAULT_BOT_CONFIG.dispatch },
+    burst: { ...DEFAULT_BOT_CONFIG.burst },
+    expertInputs: {},
+  };
+  /** Sends orders to the master and every follower at once, when wired. */
+  private dispatcher: CopyTradeEngine | null = null;
+  /** Runs an uploaded MQL5 expert when the strategy source is 'mql5'. */
+  private expert: ExpertRunner | null = null;
   private readonly strategy = new StrategyEngine();
+  private readonly trend = new TrendTracker();
   private readonly recoveries = new Map<string, RecoveryEngine>();
 
   private running = false;
@@ -37,6 +52,11 @@ export class BotEngine extends Emitter {
   private lastSignal: Signal | null = null;
   private spreadWarnedAt = 0;
   private warnedMinLot = false;
+  /* Burst model state. */
+  private burstOpen = false;
+  private burstClosedAt = 0;
+  private burstRetryAt = 0;
+  private burstTooSmallWarned = false;
 
   private counters = {
     signalsEvaluated: 0,
@@ -56,6 +76,37 @@ export class BotEngine extends Emitter {
   ) {
     super();
     this.accounts.on('closed', (trade: ClosedTrade) => this.onTradeClosed(trade));
+    // An EA's fills (and in mirror mode, the MT5 EA's) count toward the daily guards too.
+    this.accounts.on('opened', (position: Position, account: TradingAccount) => {
+      if (!this.running || this.config.source === 'builtin' || account !== this.accounts.primary()) return;
+      const counts = this.config.source === 'mql5' ? position.origin === 'bot' : position.origin === 'external';
+      if (!counts) return;
+      this.counters.tradesOpened += 1;
+      this.counters.dailyTrades += 1;
+      this.publish();
+    });
+  }
+
+  setDispatcher(dispatcher: CopyTradeEngine | null): void {
+    this.dispatcher = dispatcher;
+    if (dispatcher) dispatcher.config = this.config.dispatch;
+  }
+
+  setExpertRunner(runner: ExpertRunner | null): void {
+    this.expert = runner;
+  }
+
+  /** One order out: through the dispatcher when there is one, straight to the account otherwise. */
+  private submit(account: TradingAccount, req: OpenRequest): Promise<OpenResult> {
+    return this.dispatcher ? this.dispatcher.open(account, req) : account.submit(req);
+  }
+
+  /** Closes the matching bot legs, each with its copies, all at once. */
+  private closeLegs(account: TradingAccount, reason: ClosedTrade['reason'], filter: (p: Position) => boolean): number {
+    const legs = account.listPositions().filter(filter);
+    if (!this.dispatcher) return account.requestCloseAll(reason, filter);
+    for (const leg of legs) void this.dispatcher.close(account, leg.id, reason);
+    return legs.length;
   }
 
   /* --------------------------------------------------------------- */
@@ -70,6 +121,7 @@ export class BotEngine extends Emitter {
    * minute. Loading history first is what a terminal does anyway.
    */
   prime(candles: Candle[]): void {
+    this.trend.prime(candles);
     for (const candle of candles) {
       this.strategy.update({
         symbol: this.config.symbol,
@@ -91,11 +143,54 @@ export class BotEngine extends Emitter {
     this.config.enabled = true;
     this.startedAt = Date.now();
     this.haltReason = null;
-    this.journal.write(
-      'success',
-      account.id,
-      `Bot armed on ${this.config.symbol} — ${this.config.strategy}, ${this.config.entriesPerSignal} leg(s)/signal, up to ${this.config.maxConcurrentPositions} concurrent`,
-    );
+    const followers = this.accounts.slavesOf(account.id).length;
+    const copyNote = followers > 0 ? ` · mirroring to ${followers} follower(s), ${this.config.dispatch.mode}` : '';
+
+    if (this.config.source === 'mql5') {
+      const runner = this.expert;
+      if (!runner || !runner.loaded) {
+        this.running = false;
+        this.config.enabled = false;
+        this.journal.write('error', account.id, 'Cannot start: upload an .mq5 expert on the Trade Settings screen first.');
+        this.publish();
+        return;
+      }
+      runner.tradingAllowed = true;
+      this.journal.write('success', account.id, `Bot armed — running ${runner.info().name} on ${account.symbol}${copyNote}`);
+      void runner.start(account, this.config.expertTimeframe, this.config.expertInputs).then((ok) => {
+        if (!ok && this.running) {
+          this.running = false;
+          this.config.enabled = false;
+          this.haltReason = runner.info().detail ?? 'the expert failed to start';
+          this.publish();
+        }
+      });
+    } else if (this.config.source === 'mirror') {
+      if (this.dispatcher) this.dispatcher.mirrorExternal = true;
+      this.journal.write(
+        'success',
+        account.id,
+        `Mirroring armed — every position the EA opens in MetaTrader on ${account.config.name} is copied${copyNote}`,
+      );
+    } else if (this.config.strategy === 'burst') {
+      const b = this.config.burst;
+      const count = burstSize(account.balance, b.positionsPerStep, b.balanceStep, b.maxPositions);
+      this.burstOpen = this.botPositions(account).length > 0;
+      this.burstRetryAt = 0;
+      this.journal.write(
+        'success',
+        account.id,
+        `Bot started — burst mode on ${this.config.symbol}: ${count} × ${b.lot.toFixed(2)} per burst at ${account.balance.toFixed(2)} balance, ` +
+          `take profit +${b.takeProfitPrice.toFixed(2)}${b.stopLossPrice ? `, stop ${b.stopLossPrice.toFixed(2)}` : ', no stop loss'}, ` +
+          `${b.direction === 'trend' ? 'following the trend' : `${b.direction.toUpperCase()} only`}${copyNote}`,
+      );
+    } else {
+      this.journal.write(
+        'success',
+        account.id,
+        `Bot armed on ${this.config.symbol} — ${this.config.strategy}, ${this.config.entriesPerSignal} leg(s)/signal, up to ${this.config.maxConcurrentPositions} concurrent${copyNote}`,
+      );
+    }
     this.publish();
   }
 
@@ -103,11 +198,16 @@ export class BotEngine extends Emitter {
     if (!this.running && !closePositions) return;
     this.running = false;
     this.config.enabled = false;
+    if (this.expert?.running) void this.expert.stop();
+    if (this.dispatcher) this.dispatcher.mirrorExternal = false;
     if (closePositions) {
+      const primary = this.accounts.primary();
       for (const account of this.accounts.list()) {
-        const closed = account.closeAll('bot-stop', (p) => BOT_ORIGINS.has(p.origin));
-        if (closed.length > 0) {
-          this.journal.write('warn', account.id, `Flattened ${closed.length} bot position(s) on stop`);
+        // Copies close with their master; followers are flattened directly only for legs without one.
+        const filter = (p: Position) => BOT_ORIGINS.has(p.origin) || (p.origin === 'copy' && !p.sourceId);
+        const count = account === primary ? this.closeLegs(account, 'bot-stop', filter) : account.requestCloseAll('bot-stop', filter);
+        if (count > 0) {
+          this.journal.write('warn', account.id, `Flattened ${count} bot position(s) on stop`);
         }
       }
     }
@@ -117,11 +217,22 @@ export class BotEngine extends Emitter {
 
   updateConfig(patch: Partial<BotConfig>): BotConfig {
     const previouslyEnabled = this.config.enabled;
+    const sourceChanged = patch.source !== undefined && patch.source !== this.config.source;
     this.config = {
       ...this.config,
       ...patch,
       zeroLoss: { ...this.config.zeroLoss, ...(patch.zeroLoss ?? {}) },
+      dispatch: { ...this.config.dispatch, ...(patch.dispatch ?? {}) },
+      burst: { ...this.config.burst, ...(patch.burst ?? {}) },
+      expertInputs: patch.expertInputs ?? this.config.expertInputs,
     };
+    if (this.dispatcher) this.dispatcher.config = this.config.dispatch;
+    // A different strategy never inherits a running one: disarm, then arm again.
+    if (sourceChanged && this.running) {
+      this.stop();
+      this.journal.write('warn', null, 'Strategy source changed — the bot was disarmed; arm it again to start the new one.');
+      return this.config;
+    }
     if (patch.enabled === true && !previouslyEnabled) this.start();
     else if (patch.enabled === false && previouslyEnabled) this.stop();
     else this.publish();
@@ -172,7 +283,8 @@ export class BotEngine extends Emitter {
   /* --------------------------------------------------------------- */
 
   private onTradeClosed(trade: ClosedTrade): void {
-    if (!BOT_ORIGINS.has(trade.origin)) return;
+    const counted = BOT_ORIGINS.has(trade.origin) || (this.config.source === 'mirror' && trade.origin === 'external');
+    if (!counted || trade.accountId !== this.accounts.primary()?.id) return;
     this.counters.tradesClosed += 1;
     this.counters.dailyProfit = round(this.counters.dailyProfit + trade.netProfit);
     if (trade.netProfit >= 0) {
@@ -183,6 +295,12 @@ export class BotEngine extends Emitter {
       this.counters.grossLoss = round(this.counters.grossLoss + Math.abs(trade.netProfit));
     }
 
+    // Recovery pooling belongs to the signal models; an EA, or a burst with
+    // its own take profit, manages its own exits.
+    if (this.config.source !== 'builtin' || this.config.strategy === 'burst') {
+      this.publish();
+      return;
+    }
     const recovery = this.recoveryFor(trade.accountId);
     if (trade.netProfit < 0) {
       recovery.registerLoss(trade);
@@ -206,7 +324,18 @@ export class BotEngine extends Emitter {
 
   async onTick(tick: Tick, barClosed: boolean): Promise<void> {
     this.strategy.update(tick);
-    if (!this.running || this.busy) return;
+    this.trend.update(tick);
+    if (!this.running) return;
+
+    if (this.config.source !== 'builtin') {
+      this.rollDay(tick.time);
+      const halted = this.guardsTripped();
+      if (this.expert) this.expert.tradingAllowed = !halted;
+      if (this.config.source === 'mql5') this.expert?.onTick(tick);
+      return;
+    }
+
+    if (this.busy) return;
 
     this.busy = true;
     try {
@@ -216,6 +345,31 @@ export class BotEngine extends Emitter {
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * The daily circuit breakers as a safety net over an EA: once tripped, the
+   * EA's orders are refused the way MetaTrader refuses them with AutoTrading
+   * off, until the next trading day.
+   */
+  private guardsTripped(): boolean {
+    if (this.config.maxDailyLossUsd !== null && this.counters.dailyProfit <= -this.config.maxDailyLossUsd) {
+      if (!this.haltReason) {
+        this.haltReason = `daily loss limit hit (${this.counters.dailyProfit.toFixed(2)})`;
+        this.journal.write('error', null, 'Daily loss limit reached — the expert may manage open trades but cannot open new ones until tomorrow');
+        this.publish();
+      }
+      return true;
+    }
+    if (this.config.maxDailyTrades !== null && this.counters.dailyTrades >= this.config.maxDailyTrades) {
+      if (!this.haltReason) {
+        this.haltReason = 'daily trade cap reached';
+        this.journal.write('warn', null, 'Daily trade cap reached — the expert\'s new orders are blocked until tomorrow');
+        this.publish();
+      }
+      return true;
+    }
+    return false;
   }
 
   private rollDay(now: number): void {
@@ -236,6 +390,13 @@ export class BotEngine extends Emitter {
     const account = this.accounts.primary();
     if (!account) return;
 
+    // The burst model keeps its own exits (a take profit on every position)
+    // and acts on every quote.
+    if (this.config.strategy === 'burst') {
+      await this.evaluateBurst(account, tick);
+      return;
+    }
+
     // 1. Basket management runs on every tick regardless of execution mode.
     await this.manageBasket(account);
 
@@ -245,31 +406,7 @@ export class BotEngine extends Emitter {
       this.lastBarTime = tick.time;
     }
 
-    // 3. Risk guards.
-    const spread = round(tick.ask - tick.bid);
-    if (spread > this.config.maxSpread) {
-      if (tick.time - this.spreadWarnedAt > 30_000) {
-        this.spreadWarnedAt = tick.time;
-        this.journal.write('warn', account.id, `Spread ${spread.toFixed(2)} above limit ${this.config.maxSpread.toFixed(2)} — entries paused`);
-      }
-      return;
-    }
-    if (this.config.maxDailyLossUsd !== null && this.counters.dailyProfit <= -this.config.maxDailyLossUsd) {
-      if (!this.haltReason) {
-        this.haltReason = `daily loss limit hit (${this.counters.dailyProfit.toFixed(2)})`;
-        this.journal.write('error', account.id, `Daily loss limit reached — new entries halted until tomorrow`);
-        this.publish();
-      }
-      return;
-    }
-    if (this.config.maxDailyTrades !== null && this.counters.dailyTrades >= this.config.maxDailyTrades) {
-      if (!this.haltReason) {
-        this.haltReason = 'daily trade cap reached';
-        this.journal.write('warn', account.id, 'Daily trade cap reached — new entries halted');
-        this.publish();
-      }
-      return;
-    }
+    if (this.entryBlocked(account, tick)) return;
 
     // 4. Signal.
     const signal = this.strategy.evaluate(this.config, tick);
@@ -284,6 +421,144 @@ export class BotEngine extends Emitter {
     await this.tryEntries(account, signal, tick);
   }
 
+  /** The spread and daily guards; true when no new position may open now. */
+  private entryBlocked(account: TradingAccount, tick: Tick): boolean {
+    const spread = round(tick.ask - tick.bid);
+    if (spread > this.config.maxSpread) {
+      if (tick.time - this.spreadWarnedAt > 30_000) {
+        this.spreadWarnedAt = tick.time;
+        this.journal.write('warn', account.id, `Spread ${spread.toFixed(2)} above limit ${this.config.maxSpread.toFixed(2)} — entries paused`);
+      }
+      return true;
+    }
+    if (this.config.maxDailyLossUsd !== null && this.counters.dailyProfit <= -this.config.maxDailyLossUsd) {
+      if (!this.haltReason) {
+        this.haltReason = `daily loss limit hit (${this.counters.dailyProfit.toFixed(2)})`;
+        this.journal.write('error', account.id, `Daily loss limit reached — new entries halted until tomorrow`);
+        this.publish();
+      }
+      return true;
+    }
+    if (this.config.maxDailyTrades !== null && this.counters.dailyTrades >= this.config.maxDailyTrades) {
+      if (!this.haltReason) {
+        this.haltReason = 'daily trade cap reached';
+        this.journal.write('warn', account.id, 'Daily trade cap reached — new entries halted');
+        this.publish();
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * One burst at a time: while any of its positions is open the bot waits
+   * (each carries its own take profit at the broker); once the last has
+   * closed, the next burst goes out at once in the trend's direction, sized
+   * from the balance as it now stands.
+   */
+  private async evaluateBurst(account: TradingAccount, tick: Tick): Promise<void> {
+    const cfg = this.config.burst;
+    const open = this.botPositions(account);
+    const reading = this.trend.read(cfg.trendTimeframeMin, cfg.trendFastPeriod, cfg.trendSlowPeriod);
+    const side: Side | null = cfg.direction === 'trend' ? reading.side : cfg.direction;
+    this.counters.signalsEvaluated += 1;
+    this.lastSignal = {
+      time: tick.time,
+      symbol: this.config.symbol,
+      side,
+      strength: side ? 1 : 0,
+      fast: reading.fast,
+      slow: reading.slow,
+      momentum: 0,
+      volatility: 0,
+      reason:
+        open.length > 0
+          ? `burst open — ${open.length} position(s) riding to +${cfg.takeProfitPrice.toFixed(2)}`
+          : cfg.direction === 'trend'
+            ? reading.reason
+            : `${cfg.direction.toUpperCase()} only`,
+    };
+
+    if (open.length > 0) {
+      this.burstOpen = true;
+      return;
+    }
+    if (this.burstOpen) {
+      this.burstOpen = false;
+      this.burstClosedAt = tick.time;
+      this.journal.write('success', account.id, `Burst closed — balance now ${account.balance.toFixed(2)}`);
+      this.publish();
+    }
+    if (tick.time < this.burstRetryAt || tick.time - this.burstClosedAt < cfg.reentryDelayMs) return;
+    if (this.entryBlocked(account, tick)) return;
+    if (!side) return;
+
+    const count = burstSize(account.balance, cfg.positionsPerStep, cfg.balanceStep, cfg.maxPositions);
+    if (count < 1) {
+      if (!this.burstTooSmallWarned) {
+        this.burstTooSmallWarned = true;
+        this.journal.write('warn', account.id, `Balance ${account.balance.toFixed(2)} is below one position's step — no burst opened`);
+      }
+      return;
+    }
+    this.burstTooSmallWarned = false;
+
+    const spec = account.spec(this.config.symbol);
+    const entry = side === 'buy' ? tick.ask : tick.bid;
+    const dir = side === 'buy' ? 1 : -1;
+    const takeProfit = roundPrice(spec, entry + dir * cfg.takeProfitPrice);
+    const stopLoss = cfg.stopLossPrice && cfg.stopLossPrice > 0 ? roundPrice(spec, entry - dir * cfg.stopLossPrice) : null;
+    const comment = `${cfg.comment} ${side.toUpperCase()}`.trim();
+
+    // Every position of the burst leaves at once.
+    const results = await Promise.all(
+      Array.from({ length: count }, (_, i) =>
+        this.submit(account, {
+          symbol: this.config.symbol,
+          side,
+          volume: cfg.lot,
+          stopLoss,
+          takeProfit,
+          stopLossUsd: null,
+          takeProfitUsd: null,
+          origin: 'bot',
+          comment,
+          basketIndex: i,
+          burst: { index: i, perStep: cfg.positionsPerStep, step: cfg.balanceStep, max: cfg.maxPositions },
+        }),
+      ),
+    );
+
+    let opened = 0;
+    let firstPrice: number | null = null;
+    let rejected: string | null = null;
+    for (const result of results) {
+      if (!result.ok) {
+        rejected = result.error;
+        continue;
+      }
+      opened += 1;
+      firstPrice ??= result.position.openPrice;
+      this.counters.tradesOpened += 1;
+      this.counters.dailyTrades += 1;
+    }
+    if (rejected) this.journal.write('warn', account.id, `${count - opened} of ${count} burst position(s) rejected: ${rejected}`);
+    if (opened === 0) {
+      // Nothing filled: try again shortly rather than on every quote.
+      this.burstRetryAt = tick.time + 5_000;
+      this.publish();
+      return;
+    }
+    this.burstOpen = true;
+    this.journal.write(
+      'trade',
+      account.id,
+      `BURST ${side.toUpperCase()} ${opened} × ${cfg.lot.toFixed(2)} ${this.config.symbol} @ ${(firstPrice ?? entry).toFixed(spec.digits)} → TP ${takeProfit.toFixed(spec.digits)}` +
+        `${stopLoss !== null ? `, SL ${stopLoss.toFixed(spec.digits)}` : ''} (balance ${account.balance.toFixed(2)})`,
+    );
+    this.publish();
+  }
+
   /** Closes the whole bot basket once its combined float clears the target. */
   private async manageBasket(account: TradingAccount): Promise<void> {
     const legs = account.listPositions().filter((p) => BOT_ORIGINS.has(p.origin));
@@ -291,12 +566,12 @@ export class BotEngine extends Emitter {
     const floating = round(legs.reduce((sum, p) => sum + p.profit, 0));
 
     if (this.config.basketTakeProfitUsd !== null && floating >= this.config.basketTakeProfitUsd) {
-      account.closeAll('basket-tp', (p) => BOT_ORIGINS.has(p.origin));
+      this.closeLegs(account, 'basket-tp', (p) => BOT_ORIGINS.has(p.origin));
       this.journal.write('success', account.id, `Basket target hit — ${legs.length} leg(s) closed for +${floating.toFixed(2)}`);
       return;
     }
     if (this.config.basketStopLossUsd !== null && floating <= -Math.abs(this.config.basketStopLossUsd)) {
-      account.closeAll('basket-sl', (p) => BOT_ORIGINS.has(p.origin));
+      this.closeLegs(account, 'basket-sl', (p) => BOT_ORIGINS.has(p.origin));
       this.journal.write('error', account.id, `Basket stop hit — ${legs.length} leg(s) closed for ${floating.toFixed(2)}`);
     }
   }
@@ -369,23 +644,26 @@ export class BotEngine extends Emitter {
     const spec = getSymbolSpec(this.config.symbol);
     let opened = 0;
 
-    for (let i = 0; i < legs; i += 1) {
-      const result = await account.submit({
-        symbol: this.config.symbol,
-        side: plan.side,
-        volume: plan.legVolume,
-        stopLossUsd: null,
-        takeProfitUsd: round(
-          (plan.legVolume / this.config.lotSize) * this.config.takeProfitUsd,
-        ),
-        origin: 'recovery',
-        comment: `recovery L${plan.task.layer + 1}`,
-        basketIndex: i,
-        recoveryLayer: plan.task.layer,
-      });
+    // Every leg of the plan goes out together rather than one broker round trip after another.
+    const results = await Promise.all(
+      Array.from({ length: legs }, (_, i) =>
+        this.submit(account, {
+          symbol: this.config.symbol,
+          side: plan.side,
+          volume: plan.legVolume,
+          stopLossUsd: null,
+          takeProfitUsd: round((plan.legVolume / this.config.lotSize) * this.config.takeProfitUsd),
+          origin: 'recovery',
+          comment: `recovery L${plan.task.layer + 1}`,
+          basketIndex: i,
+          recoveryLayer: plan.task.layer,
+        }),
+      ),
+    );
+    for (const result of results) {
       if (!result.ok) {
         this.journal.write('error', account.id, `Recovery leg rejected: ${result.error}`);
-        break;
+        continue;
       }
       opened += 1;
       this.counters.tradesOpened += 1;
@@ -436,25 +714,32 @@ export class BotEngine extends Emitter {
     // Sized once per burst, from equity as it stands before the burst.
     const sizing = this.sizeLeg(account);
 
-    for (let i = 0; i < legs; i += 1) {
-      const result = await account.submit({
-        symbol: this.config.symbol,
-        side,
-        volume: sizing.volume,
-        stopLossUsd: sizing.stopLossUsd,
-        takeProfitUsd: sizing.takeProfitUsd,
-        origin: 'bot',
-        comment: `${this.config.strategy} L${i + 1}`,
-        basketIndex: i,
-      });
+    // The whole burst leaves at once: N legs cost one broker round trip, not N.
+    const results = await Promise.all(
+      Array.from({ length: legs }, (_, i) =>
+        this.submit(account, {
+          symbol: this.config.symbol,
+          side,
+          volume: sizing.volume,
+          stopLossUsd: sizing.stopLossUsd,
+          takeProfitUsd: sizing.takeProfitUsd,
+          origin: 'bot',
+          comment: `${this.config.strategy} L${i + 1}`,
+          basketIndex: i,
+        }),
+      ),
+    );
+    let rejected: string | null = null;
+    for (const result of results) {
       if (!result.ok) {
-        this.journal.write('warn', account.id, `Entry rejected: ${result.error}`);
-        break;
+        rejected = result.error;
+        continue;
       }
       opened.push(result.position);
       this.counters.tradesOpened += 1;
       this.counters.dailyTrades += 1;
     }
+    if (rejected) this.journal.write('warn', account.id, `Entry rejected: ${rejected}`);
 
     if (opened.length === 0) return;
     this.lastBurstAt = tick.time;
@@ -477,17 +762,21 @@ export class BotEngine extends Emitter {
     const errors: string[] = [];
     const legs = Math.max(1, Math.min(params.legs, 50));
 
-    for (let i = 0; i < legs; i += 1) {
-      const result = await account.submit({
-        symbol: params.symbol,
-        side: params.side,
-        volume: params.volume,
-        stopLossUsd: params.stopLossUsd,
-        takeProfitUsd: params.takeProfitUsd,
-        origin: 'manual',
-        comment: params.comment ?? 'manual',
-        basketIndex: i,
-      });
+    const results = await Promise.all(
+      Array.from({ length: legs }, (_, i) =>
+        this.submit(account, {
+          symbol: params.symbol,
+          side: params.side,
+          volume: params.volume,
+          stopLossUsd: params.stopLossUsd,
+          takeProfitUsd: params.takeProfitUsd,
+          origin: 'manual',
+          comment: params.comment ?? 'manual',
+          basketIndex: i,
+        }),
+      ),
+    );
+    for (const result of results) {
       if (result.ok) opened.push(result.position);
       else errors.push(result.error);
     }

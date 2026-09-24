@@ -1,3 +1,4 @@
+import type { LoadStrategyResult, MetaApiAccountSummary, ProvisionInput, StrategyFile } from '@sentinal/engine';
 import type {
   AccountState,
   BotConfig,
@@ -7,19 +8,22 @@ import type {
   Position,
   ServerMessage,
 } from '@sentinal/shared';
-import type { DerivCredentials, DerivMt5Account } from '../broker/derivClient';
-import type { ConnectInput, SessionState } from './session';
+import type { ConnectInput, SavedMetaApi, SessionState } from './session';
+
+export type { MetaApiAccountSummary, ProvisionInput, StrategyFile };
 
 export interface NewAccountPayload {
   name: string;
   login: string;
   server: string;
-  provider: 'sim' | 'deriv';
+  provider: 'sim' | 'metaapi';
   broker?: string;
   role: 'master' | 'slave' | 'standalone';
   leverage?: number;
   initialBalance?: number;
   copy?: Partial<CopySettings>;
+  metaApiId?: string;
+  symbol?: string;
 }
 
 export interface OrderPayload {
@@ -43,6 +47,18 @@ export interface Subscription {
   onStatus: (connected: boolean) => void;
 }
 
+/** A compile or load outcome the Strategy card can show as it is. */
+export type StrategyLoadOutcome = LoadStrategyResult;
+
+/** The EA last uploaded, kept so it can be switched back to without uploading again. */
+export interface SavedStrategyInfo {
+  fileName: string;
+  kind: 'mql5' | 'ex5';
+  /** True while it is the strategy in use. */
+  active: boolean;
+  savedAt: number;
+}
+
 /**
  * Everything the terminal needs from its execution host.
  *
@@ -57,37 +73,48 @@ export interface TerminalBackend {
   /* --- session: the terminal shows market data only once this is live --- */
   sessionState(): SessionState;
   onSession(listener: (state: SessionState) => void): () => void;
+  /** The MetaTrader accounts a MetaApi token can reach. */
+  listMetaApiAccounts(token: string): Promise<MetaApiAccountSummary[]>;
+  /** Adds a MetaTrader login to the token's MetaApi account. */
+  provisionMetaApiAccount(token: string, input: ProvisionInput): Promise<MetaApiAccountSummary>;
   connectBroker(input: ConnectInput): Promise<void>;
   startDemo(): Promise<void>;
   signOut(): Promise<void>;
-  savedCredentials(): DerivCredentials | null;
+  savedCredentials(): SavedMetaApi | null;
 
-  /**
-   * MetaTrader 5 accounts Deriv reports for this user. Read-only: Deriv's API
-   * has no call that places an order on one.
-   */
-  mt5Accounts(): Promise<DerivMt5Account[]>;
-
-  /**
-   * Confirms an MT5 login and password with Deriv. Resolves when Deriv accepts
-   * them; it proves the account is yours but grants no way to trade it.
-   */
-  verifyMt5(login: string, password: string, kind: 'main' | 'investor'): Promise<void>;
-
+  /* --- accounts --- */
   addAccount(payload: NewAccountPayload): Promise<AccountState>;
+  /** Links another MetaApi account of the signed-in token as a follower. */
+  addMetaApiFollower(metaApiId: string, copy: Partial<CopySettings>): Promise<AccountState>;
   updateAccount(
     id: string,
     patch: { name?: string; role?: AccountState['role']; copy?: Partial<CopySettings> },
   ): Promise<AccountState>;
   removeAccount(id: string): Promise<{ ok: boolean }>;
+  /** Switches an account's MetaApi quote stream to every tick. */
+  streamEveryTick(id: string): Promise<void>;
 
+  /* --- trading --- */
   order(payload: OrderPayload): Promise<{ opened: Position[]; errors: string[] }>;
   closePosition(id: string): Promise<ClosedTrade>;
   closeAll(payload: { accountId?: string; side?: 'buy' | 'sell'; profitableOnly?: boolean }): Promise<{
     closed: number;
   }>;
 
+  /* --- strategy --- */
   saveBotConfig(patch: Partial<BotConfig>): Promise<BotView>;
   startBot(): Promise<BotView>;
   stopBot(closePositions?: boolean): Promise<BotView>;
+  /** Makes uploaded .mq5 (+ .mqh) or .ex5 files the strategy. */
+  loadStrategy(files: StrategyFile[]): Promise<StrategyLoadOutcome>;
+  /** Back to a built-in model; the uploaded EA stays saved. */
+  useBuiltinStrategy(strategy?: BotConfig['strategy']): Promise<BotView>;
+  /** The uploaded EA kept for switching back to, if any. */
+  savedStrategy(): Promise<SavedStrategyInfo | null>;
+  /** Makes the saved EA the strategy again. */
+  useSavedStrategy(): Promise<StrategyLoadOutcome>;
+  /** Forgets the saved EA (a built-in model keeps trading). */
+  forgetSavedStrategy(): Promise<void>;
+  /** New EA inputs or chart timeframe; a running EA restarts with them. */
+  configureExpert(patch: { inputs?: Record<string, string | number | boolean>; timeframe?: number }): Promise<BotView>;
 }

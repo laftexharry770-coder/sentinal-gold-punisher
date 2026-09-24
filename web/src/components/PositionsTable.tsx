@@ -7,6 +7,8 @@ const ORIGIN_TONE: Record<Position['origin'], 'accent' | 'gold' | 'neutral' | 'w
   recovery: 'gold',
   copy: 'neutral',
   manual: 'warn',
+  // Opened in MetaTrader itself: by hand, or by an EA running there.
+  external: 'warn',
 };
 
 function timeAgo(from: number): string {

@@ -12,10 +12,12 @@
   },
   "dependencies": {
     "@sentinal/engine": "*",
+    "@sentinal/mql5": "*",
     "@sentinal/shared": "*",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "metaapi.cloud-sdk": "29.3.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {

@@ -10,6 +10,7 @@ export default defineConfig({
     alias: {
       '@sentinal/shared': fileURLToPath(new URL('../shared/src/index.ts', import.meta.url)),
       '@sentinal/engine': fileURLToPath(new URL('../engine/src/index.ts', import.meta.url)),
+      '@sentinal/mql5': fileURLToPath(new URL('../mql5/src/index.ts', import.meta.url)),
     },
   },
   test: {

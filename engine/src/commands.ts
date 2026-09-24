@@ -1,5 +1,4 @@
 import {
-  getSymbolSpec,
   roundLot,
   type AccountConfig,
   type AccountState,
@@ -10,6 +9,7 @@ import {
   type Position,
   type Side,
 } from '@sentinal/shared';
+import { compileMql5, inspectEx5, type CompileResult, type Ex5Info } from '@sentinal/mql5';
 import type { NewAccountInput } from './broker/manager.js';
 import type { Runtime } from './runtime.js';
 
@@ -94,8 +94,11 @@ export async function placeOrder(
   if (!account) throw new CommandError('account not found', 404);
   if (input.side !== 'buy' && input.side !== 'sell') throw new CommandError('side must be buy or sell');
 
-  const symbol = input.symbol?.toUpperCase() || runtime.bot.config.symbol;
-  const spec = getSymbolSpec(symbol);
+  // Broker symbol names are case-sensitive (Exness trades XAUUSDm), so a typed
+  // name is matched to the account's own rather than upper-cased.
+  const typed = input.symbol?.trim();
+  const symbol = !typed || typed.toUpperCase() === account.symbol.toUpperCase() ? account.symbol : typed;
+  const spec = account.spec(symbol);
   const volume = roundLot(spec, input.volume ?? runtime.bot.config.lotSize);
   const legs = Math.max(1, Math.min(50, Math.round(input.legs ?? 1)));
 
@@ -119,7 +122,11 @@ export async function placeOrder(
 export async function closePosition(runtime: Runtime, id: string): Promise<ClosedTrade> {
   const account = runtime.accounts.list().find((a) => a.getPosition(id));
   if (!account) throw new CommandError('position not found', 404);
-  const trade = await account.submitClose(id, 'manual');
+  // A master's close goes out with its copies' closes in the same instant.
+  const trade =
+    account.config.role === 'master'
+      ? await runtime.copier.close(account, id, 'manual')
+      : await account.submitClose(id, 'manual');
   if (!trade) throw new CommandError('close rejected by broker', 422);
   runtime.journal.write(
     'trade',
@@ -136,25 +143,29 @@ export function closeAll(runtime: Runtime, input: CloseAllInput): { closed: numb
 
   let closed = 0;
   for (const account of targets) {
-    closed += account.closeAll('manual', (p) => {
+    closed += account.requestCloseAll('manual', (p) => {
       if (input.side && p.side !== input.side) return false;
       if (input.profitableOnly && p.profit <= 0) return false;
       return true;
-    }).length;
+    });
   }
-  runtime.journal.write('warn', input.accountId ?? null, `Bulk close executed — ${closed} position(s)`);
+  runtime.journal.write('warn', input.accountId ?? null, `Bulk close sent — ${closed} position(s)`);
   return { closed };
 }
 
-export function modifyPosition(
+export async function modifyPosition(
   runtime: Runtime,
   id: string,
   stopLoss: number | null,
   takeProfit: number | null,
-): Position {
+): Promise<Position> {
   const account = runtime.accounts.list().find((a) => a.getPosition(id));
   if (!account) throw new CommandError('position not found', 404);
-  account.modify(id, stopLoss, takeProfit);
+  const result =
+    account.config.role === 'master'
+      ? await runtime.copier.modify(account, id, stopLoss, takeProfit)
+      : await account.submitModify(id, stopLoss, takeProfit);
+  if (!result.ok) throw new CommandError(`modify rejected: ${result.error}`, 422);
   return account.getPosition(id) as Position;
 }
 
@@ -171,5 +182,109 @@ export function startBot(runtime: Runtime): BotView {
 
 export function stopBot(runtime: Runtime, closePositions = false): BotView {
   runtime.bot.stop(closePositions);
+  return { config: runtime.bot.config, stats: runtime.bot.stats() };
+}
+
+/* ------------------------------------------------------------------ */
+/* Strategy                                                            */
+/* ------------------------------------------------------------------ */
+
+export interface StrategyFile {
+  name: string;
+  /** Text for .mq5/.mqh; base64 for .ex5. */
+  content: string;
+  encoding?: 'text' | 'base64';
+}
+
+export type LoadStrategyResult =
+  | { kind: 'mql5'; result: CompileResult }
+  | { kind: 'ex5'; info: Ex5Info };
+
+function decodeBase64(text: string): Uint8Array {
+  const binary = globalThis.atob ? globalThis.atob(text) : '';
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Makes uploaded files the strategy.
+ *
+ * An .mq5 (with any .mqh headers it includes) is compiled and runs in the
+ * engine. An .ex5 cannot run anywhere but MetaTrader, so it switches the
+ * terminal to mirror mode: the EA trades the master inside MT5 and every
+ * position it opens is copied to the followers. Either way a running bot is
+ * disarmed first — a new strategy never takes over a live book mid-flight.
+ */
+export async function loadStrategy(runtime: Runtime, files: StrategyFile[]): Promise<LoadStrategyResult> {
+  const ex5 = files.find((f) => /\.ex5$/i.test(f.name));
+  const mq5 = files.find((f) => /\.mq5$/i.test(f.name));
+  if (!ex5 && !mq5) throw new CommandError('Choose an .mq5 or .ex5 file (headers alone are not a strategy).');
+
+  if (runtime.bot.stats().running) runtime.bot.stop();
+
+  if (mq5) {
+    const headers = files.filter((f) => /\.mqh$/i.test(f.name)).map((f) => ({ name: f.name, source: f.content }));
+    const result = compileMql5(mq5.content, mq5.name, { files: headers });
+    if (!result.ok) {
+      const first = result.diagnostics.find((d) => d.severity === 'error');
+      runtime.journal.write('error', null, `${mq5.name} did not compile${first ? ` — line ${first.line}: ${first.message}` : ''}`);
+      return { kind: 'mql5', result };
+    }
+    await runtime.expert.load(result, mq5.name);
+    runtime.setMirror(null);
+    runtime.bot.updateConfig({ source: 'mql5', expertInputs: {} });
+    const warnings = result.diagnostics.filter((d) => d.severity === 'warning').length;
+    runtime.journal.write(
+      'success',
+      null,
+      `Strategy loaded: ${result.name} — ${result.inputs.length} input(s)${warnings ? `, ${warnings} warning(s)` : ''}. Arm the bot to run it.`,
+    );
+    return { kind: 'mql5', result };
+  }
+
+  const info = await inspectEx5(ex5!.name, ex5!.encoding === 'base64' ? decodeBase64(ex5!.content) : new TextEncoder().encode(ex5!.content));
+  if (!info.looksCompiled) {
+    throw new CommandError(`${info.name} is text, not a compiled expert — if it is MQL5 source, save it as .mq5 and upload that.`);
+  }
+  runtime.expert.unload();
+  runtime.setMirror({ info, loadedAt: Date.now() });
+  runtime.bot.updateConfig({ source: 'mirror' });
+  runtime.journal.write(
+    'success',
+    null,
+    `Mirror mode: ${info.name} runs in your MetaTrader on the master account; arming the bot copies every position it opens to the followers.`,
+  );
+  return { kind: 'ex5', info };
+}
+
+export function useBuiltinStrategy(runtime: Runtime, strategy?: BotConfig['strategy']): BotView {
+  if (runtime.bot.stats().running) runtime.bot.stop();
+  runtime.expert.unload();
+  runtime.setMirror(null);
+  runtime.bot.updateConfig({ source: 'builtin', ...(strategy ? { strategy } : {}) });
+  runtime.journal.write('info', null, 'Strategy: built-in models');
+  return { config: runtime.bot.config, stats: runtime.bot.stats() };
+}
+
+/**
+ * New input values or chart timeframe for the EA. A running expert is
+ * re-initialised with them, the way MetaTrader restarts an EA whose inputs
+ * change (OnDeinit with REASON_PARAMETERS, then OnInit).
+ */
+export async function configureExpert(
+  runtime: Runtime,
+  patch: { inputs?: Record<string, string | number | boolean>; timeframe?: number },
+): Promise<BotView> {
+  const next: Partial<BotConfig> = {};
+  if (patch.inputs) next.expertInputs = { ...patch.inputs };
+  if (patch.timeframe) next.expertTimeframe = patch.timeframe;
+  runtime.bot.updateConfig(next);
+  const master = runtime.accounts.primary();
+  if (runtime.bot.config.source === 'mql5' && runtime.expert.running && master) {
+    await runtime.expert.stop();
+    const ok = await runtime.expert.start(master, runtime.bot.config.expertTimeframe, runtime.bot.config.expertInputs);
+    runtime.journal.write(ok ? 'info' : 'error', master.id, ok ? 'Expert restarted with the new inputs' : 'Expert failed to restart with the new inputs');
+  }
   return { config: runtime.bot.config, stats: runtime.bot.stats() };
 }

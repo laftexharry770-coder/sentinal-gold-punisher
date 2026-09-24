@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { formatMoney, type AccountState, type CopySettings } from '@sentinal/shared';
-import { api, type NewAccountPayload } from '../api';
-import type { DerivMt5Account } from '../broker/derivClient';
+import { formatMoney, type AccountState, type CopySettings, type DispatchReport } from '@sentinal/shared';
+import { api, type MetaApiAccountSummary, type NewAccountPayload } from '../api';
+import type { SessionState } from '../backend/session';
+import { toast } from '../components/Toast';
 import { Card, Chip, EmptyState, NumberField, Segmented, TextField, Toggle } from '../components/ui';
 import { useTerminal } from '../store';
 
 const PROVIDER_LABEL: Record<AccountState['provider'], string> = {
   sim: 'Simulated',
-  deriv: 'Deriv',
+  metaapi: 'MetaApi',
 };
 
 /** Copy routing editor shown on every follower account. */
@@ -102,9 +103,13 @@ function AccountCard({ account, masters }: { account: AccountState; masters: Acc
   const [busy, setBusy] = useState(false);
 
   const unlink = async () => {
+    const note = account.provider === 'metaapi' ? ' Its positions stay open at the broker; Sentinal stops copying to it.' : '';
+    if (!window.confirm(`Unlink ${account.name}?${note}`)) return;
     setBusy(true);
     try {
       await api.removeAccount(account.id);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'not unlinked', 'error');
     } finally {
       setBusy(false);
     }
@@ -112,6 +117,19 @@ function AccountCard({ account, masters }: { account: AccountState; masters: Acc
 
   const changeRole = async (role: AccountState['role']) => {
     await api.updateAccount(account.id, { role });
+  };
+
+  const everyTick = async () => {
+    if (!window.confirm(`Switch ${account.name} to tick-by-tick quotes? MetaApi restarts its server for the account, which drops the connection for about a minute. Positions are not affected.`)) return;
+    setBusy(true);
+    try {
+      await api.streamEveryTick(account.id);
+      toast(`${account.name} now streams every tick`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'MetaApi refused the change', 'error');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -123,8 +141,19 @@ function AccountCard({ account, masters }: { account: AccountState; masters: Acc
             <Chip tone={account.connected ? 'profit' : 'loss'}>{account.connected ? 'connected' : 'offline'}</Chip>
           </div>
           <p className="tabular mt-0.5 truncate text-xs text-[var(--color-ink-muted)]">
-            {PROVIDER_LABEL[account.provider]} · {account.login} · {account.server}
+            {PROVIDER_LABEL[account.provider]} · {account.platform.toUpperCase()} · {account.login} · {account.server} · {account.symbol}
           </p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {account.accountType !== 'sim' && <Chip tone={account.accountType === 'real' ? 'loss' : 'neutral'}>{account.accountType}</Chip>}
+            <Chip tone="neutral">
+              {account.avgLatencyMs === null ? 'no orders yet' : `ack ${account.lastLatencyMs} ms · avg ${account.avgLatencyMs} ms`}
+            </Chip>
+            {account.quoteIntervalSec !== null && (
+              <Chip tone={account.quoteIntervalSec === 0 ? 'profit' : 'warn'}>
+                {account.quoteIntervalSec === 0 ? 'every tick' : `quotes each ${account.quoteIntervalSec}s`}
+              </Chip>
+            )}
+          </div>
         </div>
         <div className="w-full shrink-0 sm:w-60">
           <Segmented
@@ -164,10 +193,17 @@ function AccountCard({ account, masters }: { account: AccountState; masters: Acc
         </p>
       )}
 
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <button className="btn btn-ghost px-3 py-1.5 text-xs" onClick={() => setOpen((v) => !v)}>
-          {open ? 'Hide routing' : 'Copy routing'}
-        </button>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button className="btn btn-ghost px-3 py-1.5 text-xs" onClick={() => setOpen((v) => !v)}>
+            {open ? 'Hide routing' : 'Copy routing'}
+          </button>
+          {account.provider === 'metaapi' && account.quoteIntervalSec !== null && account.quoteIntervalSec > 0 && (
+            <button className="btn btn-ghost px-3 py-1.5 text-xs" disabled={busy} onClick={() => void everyTick()}>
+              Stream every tick
+            </button>
+          )}
+        </div>
         <button className="btn btn-ghost px-3 py-1.5 text-xs text-loss" disabled={busy} onClick={() => void unlink()}>
           {busy ? 'Unlinking…' : 'Unlink'}
         </button>
@@ -178,188 +214,111 @@ function AccountCard({ account, masters }: { account: AccountState; masters: Acc
   );
 }
 
-/**
- * The MetaTrader 5 accounts Deriv holds for this user.
- *
- * Shown because they are real money the operator has, and labelled as not
- * tradable from here because Deriv's API manages MT5 accounts but has no call
- * that places an order on one. Saying so on the screen is better than leaving
- * somebody to discover it by arming a bot that never fires.
- */
-/**
- * Signs in to a MetaTrader 5 account with the details MetaTrader itself shows.
- *
- * Deriv confirms the password belongs to the login, which is proof the account
- * is the operator's. It is deliberately not called "connect": Deriv exposes no
- * call that places an order on an MT5 account, so verifying one changes what
- * the terminal knows, not where its orders go.
- */
-function Mt5SignIn({ onVerified }: { onVerified: (login: string) => void }) {
-  const [login, setLogin] = useState('');
-  const [password, setPassword] = useState('');
-  const [kind, setKind] = useState<'main' | 'investor'>('main');
-  const [busy, setBusy] = useState(false);
+/** Followers from the MetaApi token the session signed in with. */
+function MetaApiFollowers() {
+  const { accounts } = useTerminal();
+  const [list, setList] = useState<MetaApiAccountSummary[] | null>(null);
+  const [multiplier, setMultiplier] = useState(1);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
-  // Deriv answering "unrecognised" means the call is absent from this session,
-  // not that the details were wrong. Retrying cannot help, so the form stops
-  // inviting it.
-  const [unavailable, setUnavailable] = useState(false);
-
-  const submit = async () => {
-    setBusy(true);
-    setError(null);
-    setOk(null);
-    try {
-      await api.verifyMt5(login, password, kind);
-      setOk(`Deriv confirmed ${login.trim()}.`);
-      // The password has done its job; nothing keeps it around.
-      setPassword('');
-      onVerified(login.trim());
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Deriv would not confirm those details.';
-      if (/unrecognised|unrecognized/i.test(message)) {
-        setUnavailable(true);
-        setPassword('');
-      }
-      setError(message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (unavailable) {
-    return (
-      <Card title="Sign in to MetaTrader 5" subtitle="Not available on this session" bodyClass="p-4 space-y-2">
-        <p className="text-xs leading-relaxed text-[var(--color-ink-dim)]">
-          Deriv answered <span className="text-ink">“Unrecognised request”</span>, which means the session this
-          terminal holds does not carry MetaTrader calls at all. It is a trading connection: quotes, contracts
-          and balances. Account management, which is where checking an MT5 password lives, is not on it.
-        </p>
-        <p className="text-xs leading-relaxed text-[var(--color-ink-muted)]">
-          So there is nothing to retry, and nothing on this screen that would make it work. Your MT5 account
-          stays reachable in the Deriv app; the bot trades the Deriv account you signed in with, which is the
-          only account Deriv's API will take an order for.
-        </p>
-      </Card>
-    );
-  }
-
-  return (
-    <Card title="Sign in to MetaTrader 5" subtitle="Verify the account with Deriv" bodyClass="p-4 space-y-3">
-      <p className="text-xs leading-relaxed text-[var(--color-ink-dim)]">
-        The login and server shown in your Deriv MT5 account, with its password. Deriv checks them and
-        confirms the account is yours.
-      </p>
-
-      <TextField
-        label="Login id"
-        value={login}
-        onChange={setLogin}
-        placeholder="41204838"
-        inputMode="numeric"
-        hint="The Login ID under Account details, without the server name."
-      />
-      <TextField
-        label="Password"
-        secret
-        value={password}
-        onChange={setPassword}
-        placeholder="••••••••"
-        hint="Sent to Deriv to be checked, and held nowhere — not in this browser, not after this check."
-      />
-      <Segmented
-        label="Password type"
-        value={kind}
-        onChange={setKind}
-        options={[
-          { value: 'main', label: 'Main' },
-          { value: 'investor', label: 'Investor' },
-        ]}
-      />
-
-      {error && (
-        <p className="rounded-lg border border-loss/40 bg-loss/10 px-3 py-2 text-xs leading-relaxed text-loss">
-          {error}
-        </p>
-      )}
-      {ok && (
-        <p className="rounded-lg border border-profit/40 bg-profit/10 px-3 py-2 text-xs leading-relaxed text-profit">
-          {ok} Its balance is listed above. Orders still go to your Deriv account — Deriv's API has no call
-          that places one on MT5.
-        </p>
-      )}
-
-      <button
-        className="btn btn-primary w-full py-2"
-        disabled={busy || login.trim().length === 0 || password.length === 0}
-        onClick={() => void submit()}
-      >
-        {busy ? 'Checking with Deriv…' : 'Verify with Deriv'}
-      </button>
-    </Card>
-  );
-}
-
-function Mt5Accounts({ verified, reloadKey }: { verified: string | null; reloadKey: number }) {
-  const [accounts, setAccounts] = useState<DerivMt5Account[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void api
-      .mt5Accounts()
-      .then((list) => !cancelled && setAccounts(list))
-      .catch(() => !cancelled && setAccounts([]));
+      // An empty token means "the session's own".
+      .listMetaApiAccounts('')
+      .then((l) => !cancelled && setList(l))
+      .catch((err: unknown) => !cancelled && setError(err instanceof Error ? err.message : 'MetaApi did not answer'));
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [accounts.length]);
 
-  if (accounts !== null && accounts.length === 0) return null;
+  const linked = new Set(accounts.map((a) => a.metaApiId).filter(Boolean));
+  const available = (list ?? []).filter((a) => !linked.has(a.id));
+
+  const add = async (account: MetaApiAccountSummary) => {
+    setBusy(account.id);
+    setError(null);
+    try {
+      await api.addMetaApiFollower(account.id, { sizing: 'multiplier', multiplier });
+      toast(`${account.name} is copying the master`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'not linked');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
-    <Card
-      title="Your Deriv MT5 accounts"
-      subtitle={accounts ? `${accounts.length} reported by Deriv` : 'Asking Deriv…'}
-      bodyClass="p-3 space-y-2"
-    >
-      {accounts === null ? (
-        <p className="px-1 py-2 text-xs text-[var(--color-ink-muted)]">Reading your MT5 accounts…</p>
-      ) : (
-        accounts.map((account) => (
-          <div key={`${account.login}-${account.server}`} className="card-flush px-3.5 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="tabular text-sm font-semibold text-ink">{account.login}</span>
-                  <Chip tone={account.accountType === 'demo' ? 'neutral' : 'gold'}>
-                    {account.accountType || 'mt5'}
-                  </Chip>
-                  {account.marketType && <Chip tone="neutral">{account.marketType}</Chip>}
-                  {verified === account.login && <Chip tone="profit">verified</Chip>}
-                </div>
-                <p className="mt-0.5 text-[0.6875rem] text-[var(--color-ink-muted)]">{account.server}</p>
-              </div>
-              <div className="tabular shrink-0 text-right">
-                <div className="text-sm font-semibold text-ink">{formatMoney(account.balance)}</div>
-                <div className="text-[0.6875rem] text-[var(--color-ink-muted)]">{account.currency}</div>
-              </div>
-            </div>
-          </div>
-        ))
+    <Card title="Add a follower" subtitle="Another MetaTrader account on your MetaApi token" bodyClass="p-4 space-y-3">
+      <NumberField label="Lot multiplier" value={multiplier} onChange={setMultiplier} step={0.1} min={0.01} suffix="×" hint="A copy trades the master's lot times this; change it later under Copy routing." />
+      {list === null && !error && <p className="text-xs text-[var(--color-ink-muted)]">Reading your MetaApi accounts…</p>}
+      {list !== null && available.length === 0 && (
+        <p className="text-xs leading-relaxed text-[var(--color-ink-muted)]">
+          Every account on this token is linked. Add more MetaTrader logins to MetaApi from the sign-in screen or at app.metaapi.cloud.
+        </p>
       )}
-      <p className="px-1 pt-1 text-[0.6875rem] leading-relaxed text-[var(--color-ink-muted)]">
-        Shown for reference only. Deriv's API manages MT5 accounts but has no call that places an order on
-        one, so the bot cannot trade these — its live orders go to the Deriv account you signed in with.
-        Trading an MT5 account needs a MetaTrader bridge.
-      </p>
+      <ul className="space-y-2">
+        {available.map((account) => (
+          <li key={account.id} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-2.5">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-ink">{account.name}</p>
+              <p className="tabular truncate text-[0.6875rem] text-[var(--color-ink-muted)]">
+                {account.platform.toUpperCase()} · {account.login} · {account.server}
+              </p>
+            </div>
+            <button className="btn btn-primary shrink-0 px-3 py-1.5 text-xs" disabled={busy !== null} onClick={() => void add(account)}>
+              {busy === account.id ? 'Linking…' : 'Copy master'}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {error && <p className="text-xs text-loss">{error}</p>}
     </Card>
   );
 }
 
-export function ConnectBroker() {
-  const { accounts } = useTerminal();
+function DispatchLog({ reports, accounts }: { reports: DispatchReport[]; accounts: AccountState[] }) {
+  const name = (id: string) => accounts.find((a) => a.id === id)?.name ?? id;
+  return (
+    <Card title="Copy latency" subtitle="Each order, and how fast every account's broker answered" bodyClass="max-h-96 overflow-auto p-0">
+      {reports.length === 0 ? (
+        <EmptyState title="No orders dispatched yet" hint="When the bot or an EA trades, each order and its copies are timed here." />
+      ) : (
+        <ul className="divide-y divide-[var(--color-line)]">
+          {reports.map((r) => (
+            <li key={r.id} className="px-4 py-2.5 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-ink">
+                  {r.action.toUpperCase()} {r.side ? r.side.toUpperCase() : ''} {r.symbol}
+                </span>
+                <span className="tabular text-[var(--color-ink-muted)]">
+                  sent to all in {r.sendSpreadMs < 1 ? `${Math.round(r.sendSpreadMs * 1000)} µs` : `${r.sendSpreadMs.toFixed(1)} ms`} ·{' '}
+                  {new Date(r.time).toLocaleTimeString()}
+                </span>
+              </div>
+              <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                {r.legs.map((leg, i) => (
+                  <li key={`${leg.accountId}-${i}`}>
+                    <Chip tone={leg.ok ? (leg.role === 'master' ? 'gold' : 'profit') : 'loss'}>
+                      {name(leg.accountId)} {leg.ok ? `${leg.ackMs ?? '—'} ms` : leg.error ?? 'rejected'}
+                    </Chip>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+export function ConnectBroker({ session }: { session: SessionState }) {
+  const { accounts, dispatches } = useTerminal();
   const masters = accounts.filter((a) => a.role === 'master');
+  const live = session.status === 'live';
 
   const [form, setForm] = useState<NewAccountPayload>({
     name: '',
@@ -371,8 +330,6 @@ export function ConnectBroker() {
     leverage: 500,
     initialBalance: 10_000,
   });
-  const [verifiedMt5, setVerifiedMt5] = useState<string | null>(null);
-  const [mt5Reload, setMt5Reload] = useState(0);
   const [copyMasterId, setCopyMasterId] = useState('');
   const [multiplier, setMultiplier] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -409,11 +366,11 @@ export function ConnectBroker() {
   const valid = form.name.trim() && form.login.trim() && form.server.trim();
 
   return (
-    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
+    <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
       <div className="space-y-3">
         <Card
           title="Linked accounts"
-          subtitle={`${accounts.length} terminal(s) · ${masters.length} master(s)`}
+          subtitle={`${accounts.length} account(s) · ${masters.length} master(s)`}
           bodyClass="p-3 space-y-3"
         >
           {accounts.length === 0 ? (
@@ -426,40 +383,34 @@ export function ConnectBroker() {
           )}
         </Card>
 
-        <Mt5Accounts verified={verifiedMt5} reloadKey={mt5Reload} />
-        <Mt5SignIn
-          onVerified={(login) => {
-            setVerifiedMt5(login);
-            setMt5Reload((n) => n + 1);
-          }}
-        />
+        <DispatchLog reports={dispatches} accounts={accounts} />
 
-        <Card title="How routing works" bodyClass="p-4 text-xs leading-relaxed text-[var(--color-ink-dim)] space-y-2">
+        <Card title="How copying works" bodyClass="p-4 text-xs leading-relaxed text-[var(--color-ink-dim)] space-y-2">
           <p>
-            The engine trades the <span className="font-semibold text-ink">master</span> account. Every leg it opens —
-            including each leg of a multi-entry burst and every zero-loss recovery leg — is mirrored onto each connected
-            follower using that follower's own sizing rule.
+            The strategy trades the <span className="font-semibold text-ink">master</span>. Each order it sends goes to the master and to
+            every follower in the same instant — followers never wait to hear that the master filled. Each copy uses the follower's
+            own gold symbol and sizing rule, and money stops become the same price level on every account.
           </p>
           <p>
-            Followers can invert direction, keep or drop the master's stop and target, and cancel a mirrored fill when
-            slippage exceeds their tolerance. Closes propagate too, so a basket exit on the master flattens the
-            followers in the same pass.
+            Trades that start in MetaTrader itself — an .ex5 EA or a manual trade on the master — are copied the moment MetaApi reports
+            them. Closes, partial closes and stop changes follow the same path, and copies are re-matched to their master after a reload.
           </p>
           <p className="text-[var(--color-ink-muted)]">
-            Your <span className="font-semibold text-ink">Deriv</span> account is linked at sign-in, and it is the only
-            account that can place real orders. Followers added here are simulated: they mirror the master's legs
-            against Deriv's live prices so you can see how a routing rule would have behaved, without staking money on
-            it.
+            No copier can make latency zero: each broker still takes its own round trip to fill. The copy latency card shows exactly
+            what that costs, order by order.
           </p>
         </Card>
       </div>
 
+      {live ? (
+        <MetaApiFollowers />
+      ) : (
       <Card title="Add a follower" subtitle="Simulated mirror account" bodyClass="p-4 space-y-3">
         <TextField
           label="Display name"
           value={form.name}
           onChange={(name) => setForm((prev) => ({ ...prev, name }))}
-          placeholder="Sentinal Master"
+          placeholder="Follower B"
         />
         <TextField
           label="Login"
@@ -471,13 +422,7 @@ export function ConnectBroker() {
           label="Server"
           value={form.server}
           onChange={(server) => setForm((prev) => ({ ...prev, server }))}
-          placeholder="ICMarketsSC-Live04"
-        />
-        <TextField
-          label="Broker"
-          value={form.broker ?? ''}
-          onChange={(broker) => setForm((prev) => ({ ...prev, broker }))}
-          placeholder="IC Markets"
+          placeholder="Demo-Server"
         />
 
         <div className="grid grid-cols-2 gap-3">
@@ -536,6 +481,7 @@ export function ConnectBroker() {
           {busy ? 'Linking…' : 'Link account'}
         </button>
       </Card>
+      )}
     </div>
   );
 }

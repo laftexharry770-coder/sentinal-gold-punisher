@@ -135,9 +135,9 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card
-          title="XAUUSD · M1"
+          title={`${quote?.symbol ?? config.symbol} · M1`}
           subtitle={quote ? `bid ${formatPrice(quote.bid)} / ask ${formatPrice(quote.ask)}` : 'awaiting feed'}
           actions={
             <div className="flex items-center gap-1.5">
@@ -219,7 +219,7 @@ export function Dashboard() {
         />
       </Card>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Card title="Recent fills" subtitle="Closed trades, newest first" bodyClass="max-h-72 overflow-auto p-0">
           {history.length === 0 ? (
             <EmptyState title="No closed trades yet" />

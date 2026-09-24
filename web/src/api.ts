@@ -2,7 +2,16 @@ import { createLocalBackend } from './backend/local';
 import { createRemoteBackend } from './backend/remote';
 import type { TerminalBackend } from './backend/types';
 
-export type { NewAccountPayload, OrderPayload, TerminalBackend } from './backend/types';
+export type {
+  MetaApiAccountSummary,
+  NewAccountPayload,
+  OrderPayload,
+  ProvisionInput,
+  SavedStrategyInfo,
+  StrategyFile,
+  StrategyLoadOutcome,
+  TerminalBackend,
+} from './backend/types';
 
 /**
  * The standalone build ships the engine inside the page; the served build talks
@@ -27,20 +36,27 @@ export const api: TerminalBackend = {
   subscribe: (handlers) => backend.subscribe(handlers),
   sessionState: () => backend.sessionState(),
   onSession: (listener) => backend.onSession(listener),
+  listMetaApiAccounts: (token) => backend.listMetaApiAccounts(token),
+  provisionMetaApiAccount: (token, input) => backend.provisionMetaApiAccount(token, input),
   connectBroker: (input) => backend.connectBroker(input),
   startDemo: () => backend.startDemo(),
   signOut: () => backend.signOut(),
   savedCredentials: () => backend.savedCredentials(),
-  mt5Accounts: () => backend.mt5Accounts(),
-  verifyMt5: (login: string, password: string, kind: 'main' | 'investor') =>
-    backend.verifyMt5(login, password, kind),
   addAccount: (payload) => backend.addAccount(payload),
+  addMetaApiFollower: (metaApiId, copy) => backend.addMetaApiFollower(metaApiId, copy),
   updateAccount: (id, patch) => backend.updateAccount(id, patch),
   removeAccount: (id) => backend.removeAccount(id),
+  streamEveryTick: (id) => backend.streamEveryTick(id),
   order: (payload) => backend.order(payload),
   closePosition: (id) => backend.closePosition(id),
   closeAll: (payload) => backend.closeAll(payload),
   saveBotConfig: (patch) => backend.saveBotConfig(patch),
   startBot: () => backend.startBot(),
   stopBot: (closePositions) => backend.stopBot(closePositions),
+  loadStrategy: (files) => backend.loadStrategy(files),
+  useBuiltinStrategy: (strategy) => backend.useBuiltinStrategy(strategy),
+  savedStrategy: () => backend.savedStrategy(),
+  useSavedStrategy: () => backend.useSavedStrategy(),
+  forgetSavedStrategy: () => backend.forgetSavedStrategy(),
+  configureExpert: (patch) => backend.configureExpert(patch),
 };

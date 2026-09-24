@@ -25,7 +25,7 @@ export interface FeedOptions {
  * everything downstream only consumes the `tick` / `candle` events.
  */
 export class MarketFeed extends Emitter {
-  readonly spec: SymbolSpec;
+  spec: SymbolSpec;
   private readonly opts: FeedOptions;
   private readonly rng: () => number;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -93,6 +93,11 @@ export class MarketFeed extends Emitter {
     if (this.timer || this.isExternal) return;
     this.emitTick();
     this.timer = setInterval(() => this.emitTick(), this.opts.intervalMs);
+  }
+
+  /** Adopts the broker's contract for the traded symbol (its digits, its name). */
+  setSpec(spec: SymbolSpec): void {
+    this.spec = spec;
   }
 
   /** Loads broker history so the chart opens with real bars behind it. */
