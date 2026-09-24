@@ -18,7 +18,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@sentinal/shared": "*"
+    "@sentinal/shared": "*",
+    "@sentinal/mql5": "*"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

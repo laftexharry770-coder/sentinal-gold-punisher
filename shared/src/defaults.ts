@@ -12,6 +12,11 @@ import type { BotConfig, CopySettings } from './types.js';
 export const DEFAULT_BOT_CONFIG: BotConfig = {
   enabled: false,
   symbol: 'XAUUSD',
+  source: 'builtin',
+  expertTimeframe: 1,
+  expertInputs: {},
+  // Every order goes to the master and all followers in the same instant.
+  dispatch: { mode: 'simultaneous', cancelOrphans: true },
   execution: 'intrabar',
   strategy: 'adaptive-scalp',
   // Adaptive by default: each leg risks 0.25% of equity, with the stop a $2

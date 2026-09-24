@@ -152,7 +152,7 @@ export function createRouter(runtime: Runtime): Router {
         name: typeof body.name === 'string' ? body.name.trim() : '',
         login: typeof body.login === 'string' ? body.login.trim() : '',
         server: typeof body.server === 'string' ? body.server.trim() : '',
-        provider: body.provider === 'deriv' ? body.provider : 'sim',
+        provider: 'sim',
         role: body.role === 'master' || body.role === 'slave' ? body.role : 'standalone',
         broker: typeof body.broker === 'string' ? body.broker : undefined,
         currency: typeof body.currency === 'string' ? body.currency : undefined,

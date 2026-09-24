@@ -10,6 +10,7 @@ export default defineConfig({
       // Resolve the workspace dependency from source so `npm test` works on a
       // fresh clone, before anything has been built.
       '@sentinal/shared': path.resolve(here, '../shared/src/index.ts'),
+      '@sentinal/mql5': path.resolve(here, '../mql5/src/index.ts'),
     },
   },
 });

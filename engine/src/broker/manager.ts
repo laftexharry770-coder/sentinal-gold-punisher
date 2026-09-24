@@ -4,6 +4,7 @@ import {
   type AccountConfig,
   type AccountState,
   type ClosedTrade,
+  type PendingOrder,
   type PortfolioSnapshot,
   type Position,
   type Tick,
@@ -13,8 +14,8 @@ import { TradingAccount } from './account.js';
 
 /**
  * Builds an account for a provider the core does not implement itself.
- * The browser build registers the Deriv adapter this way, which keeps the
- * engine free of transport code and lets it run unchanged on a server.
+ * The MetaApi adapter is registered this way, which keeps the engine free of
+ * transport code and lets it run unchanged in a browser or on a server.
  */
 export type AccountFactory = (config: AccountConfig) => TradingAccount;
 
@@ -30,6 +31,8 @@ export interface NewAccountInput {
   role?: AccountConfig['role'];
   initialBalance?: number;
   copy?: Partial<AccountConfig['copy']>;
+  metaApiId?: string;
+  symbol?: string;
 }
 
 /** Owns every linked account and fans the market feed out to all of them. */
@@ -79,6 +82,8 @@ export class AccountManager extends Emitter {
       role: input.role ?? 'standalone',
       initialBalance: input.initialBalance ?? 10_000,
       copy: { ...DEFAULT_COPY_SETTINGS, ...input.copy },
+      metaApiId: input.metaApiId,
+      symbol: input.symbol,
     };
 
     // A follower linked without an explicit master attaches to the running one.
@@ -141,7 +146,22 @@ export class AccountManager extends Emitter {
     account.on('closed', (trade: ClosedTrade, position: Position) =>
       this.emit('closed', trade, position, account),
     );
+    account.on('partial', (trade: ClosedTrade, position: Position) =>
+      this.emit('partial', trade, position, account),
+    );
+    account.on('modified', (position: Position) => this.emit('modified', position, account));
+    account.on('orders', () => this.emit('orders', this.allOrders()));
     account.on('changed', () => this.emit('changed', account));
+  }
+
+  allOrders(): PendingOrder[] {
+    return this.list().flatMap((a) => a.listOrders());
+  }
+
+  /** The account a follower copies, if it is linked and copying. */
+  masterOf(account: TradingAccount): TradingAccount | undefined {
+    const id = account.config.copy.masterId;
+    return id ? this.accounts.get(id) : undefined;
   }
 
   onTick(tick: Tick): void {

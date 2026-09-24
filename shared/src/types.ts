@@ -6,7 +6,7 @@
 
 export type Side = 'buy' | 'sell';
 
-export type BrokerProvider = 'sim' | 'deriv';
+export type BrokerProvider = 'sim' | 'metaapi';
 
 export type AccountRole = 'master' | 'slave' | 'standalone';
 
@@ -23,6 +23,19 @@ export interface SymbolSpec {
   baseSpread: number;
   /** Round-turn commission charged per standard lot, account currency. */
   commissionPerLot: number;
+  /* Broker details below are optional: the built-in XAUUSD default omits them. */
+  /** Smallest price increment the broker quotes (often equal to tickSize). */
+  point?: number;
+  /** Money value of one tick for one lot, account currency. */
+  tickValue?: number;
+  /** Minimum distance of a stop from the price, in points. */
+  stopsLevel?: number;
+  freezeLevel?: number;
+  /** SYMBOL_FILLING_* flags the broker accepts. */
+  fillingFlags?: number;
+  description?: string;
+  /** Whether the broker allows trading it: 'full', 'long-only', 'short-only', 'close-only' or 'disabled'. */
+  tradeMode?: 'full' | 'long-only' | 'short-only' | 'close-only' | 'disabled';
 }
 
 export interface Tick {
@@ -70,6 +83,10 @@ export interface AccountConfig {
   id: string;
   name: string;
   provider: BrokerProvider;
+  /** MetaApi's id for this trading account, when it is a live one. */
+  metaApiId?: string;
+  /** The broker's own name for the traded instrument (XAUUSD, XAUUSDm, GOLD…). */
+  symbol?: string;
   login: string;
   server: string;
   broker: string;
@@ -102,13 +119,30 @@ export interface AccountState {
   totalProfit: number;
   openPositions: number;
   copy: CopySettings;
+  /** The instrument this account trades, in the broker's own naming. */
+  symbol: string;
+  /** 'demo' or 'real', as the broker reports it; 'sim' for simulated accounts. */
+  accountType: 'demo' | 'real' | 'contest' | 'sim';
+  platform: 'mt5' | 'mt4' | 'sim';
+  metaApiId: string | null;
+  /** Round trip of the last order this account acknowledged, milliseconds. */
+  lastLatencyMs: number | null;
+  /** Average broker acknowledgement time over recent orders, milliseconds. */
+  avgLatencyMs: number | null;
+  /** Seconds between quotes MetaApi streams (0 = every tick). Null when unknown. */
+  quoteIntervalSec: number | null;
+  pendingOrders: number;
 }
 
 /* ------------------------------------------------------------------ */
 /* Positions                                                           */
 /* ------------------------------------------------------------------ */
 
-export type PositionOrigin = 'bot' | 'manual' | 'copy' | 'recovery';
+/**
+ * Who opened a position. 'external' is one the engine did not open itself —
+ * a trade placed in MetaTrader, or by an EA running there.
+ */
+export type PositionOrigin = 'bot' | 'manual' | 'copy' | 'recovery' | 'external';
 
 export interface Position {
   id: string;
@@ -138,6 +172,53 @@ export interface Position {
   magic: number;
   /** Position id on the master account when this leg was copied. */
   sourceId: string | null;
+  /** Correlates an order with the dispatch that sent it to every account at once. */
+  clientId: string | null;
+}
+
+export type PendingType = 'buy-limit' | 'sell-limit' | 'buy-stop' | 'sell-stop' | 'buy-stop-limit' | 'sell-stop-limit';
+
+export interface PendingOrder {
+  id: string;
+  ticket: number;
+  accountId: string;
+  symbol: string;
+  type: PendingType;
+  volume: number;
+  openPrice: number;
+  stopLimitPrice: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  /** Unix ms; null for good-till-cancelled. */
+  expiration: number | null;
+  magic: number;
+  comment: string;
+  time: number;
+  clientId: string | null;
+}
+
+/** One deal in the account history, the unit MT5 reports trades in. */
+export interface Deal {
+  id: string;
+  ticket: number;
+  accountId: string;
+  positionId: string;
+  orderId: string;
+  symbol: string;
+  type: 'buy' | 'sell' | 'balance' | 'other';
+  entry: 'in' | 'out' | 'inout' | 'out-by';
+  volume: number;
+  price: number;
+  profit: number;
+  commission: number;
+  swap: number;
+  magic: number;
+  comment: string;
+  /** Unix ms. */
+  time: number;
+  reason: 'client' | 'expert' | 'sl' | 'tp' | 'so' | 'other';
+  stopLoss: number | null;
+  takeProfit: number | null;
 }
 
 export type CloseReason =
@@ -190,9 +271,34 @@ export interface ZeroLossConfig {
   maxRecoveryLot: number;
 }
 
+/** Where trading decisions come from. */
+export type StrategySource =
+  /** The engine's own signal models (adaptive scalp, momentum, mean reversion). */
+  | 'builtin'
+  /** An uploaded MQL5 expert advisor, compiled and running in the engine. */
+  | 'mql5'
+  /** An EA running in MetaTrader on the master account; the engine only copies it. */
+  | 'mirror';
+
+export interface DispatchConfig {
+  /**
+   * 'simultaneous' sends each order to the master and every follower at the
+   * same instant. 'after-fill' waits for the master to fill first, then copies.
+   */
+  mode: 'simultaneous' | 'after-fill';
+  /** Close a follower's fill when the master rejected the same order. */
+  cancelOrphans: boolean;
+}
+
 export interface BotConfig {
   enabled: boolean;
   symbol: string;
+  source: StrategySource;
+  /** Chart timeframe an uploaded EA runs on, MQL5 code (1 = M1, 16385 = H1 …). */
+  expertTimeframe: number;
+  /** Values for the uploaded EA's inputs, by input name. */
+  expertInputs: Record<string, string | number | boolean>;
+  dispatch: DispatchConfig;
   /** Execution style — intrabar fires on tick, close waits for candle close. */
   execution: 'intrabar' | 'bar-close';
   strategy: 'adaptive-scalp' | 'momentum' | 'mean-reversion';
@@ -321,6 +427,57 @@ export interface PortfolioSnapshot {
 /* Wire protocol                                                       */
 /* ------------------------------------------------------------------ */
 
+/** The strategy the engine is running, as the terminal shows it. */
+export interface StrategyInfo {
+  source: StrategySource;
+  /** EA or model name. */
+  name: string;
+  fileName: string | null;
+  status: 'idle' | 'running' | 'stopped' | 'failed' | 'waiting';
+  detail: string | null;
+  /** Inputs of an uploaded EA, for the settings form. */
+  inputs: StrategyInput[];
+  diagnostics: { severity: 'error' | 'warning' | 'info'; message: string; file: string; line: number }[];
+  /** SHA-256 of an uploaded .ex5, for mirror mode. */
+  fingerprint: string | null;
+  /** Text of the EA's Comment(). */
+  comment: string;
+  /** Text labels the EA draws, in screen order — its status panel. */
+  panel: string[];
+  lastTickMs: number | null;
+  ticks: number;
+  loadedAt: number | null;
+}
+
+export interface StrategyInput {
+  name: string;
+  label: string;
+  group?: string;
+  kind: 'bool' | 'int' | 'double' | 'string' | 'enum' | 'datetime' | 'color' | 'timeframe';
+  typeName: string;
+  defaultValue: number | string | boolean | null;
+  options?: { value: number; name: string; label: string }[];
+  static: boolean;
+}
+
+/** One order sent to several accounts at once, and how each answered. */
+export interface DispatchReport {
+  id: string;
+  time: number;
+  action: 'open' | 'close' | 'modify';
+  symbol: string;
+  side: Side | null;
+  /** Time between sending to the first and the last account, milliseconds. */
+  sendSpreadMs: number;
+  legs: {
+    accountId: string;
+    role: 'master' | 'follower';
+    ok: boolean;
+    ackMs: number | null;
+    error: string | null;
+  }[];
+}
+
 export interface StateSnapshot {
   quote: Tick | null;
   candles: Candle[];
@@ -333,6 +490,9 @@ export interface StateSnapshot {
   stats: BotStats;
   portfolio: PortfolioSnapshot;
   equityCurve: EquityPoint[];
+  strategy: StrategyInfo;
+  dispatches: DispatchReport[];
+  orders: PendingOrder[];
 }
 
 export interface EquityPoint {
@@ -353,6 +513,9 @@ export type ServerMessage =
   | { type: 'bot'; payload: { config: BotConfig; stats: BotStats } }
   | { type: 'portfolio'; payload: PortfolioSnapshot }
   | { type: 'equity'; payload: EquityPoint }
+  | { type: 'strategy'; payload: StrategyInfo }
+  | { type: 'dispatch'; payload: DispatchReport }
+  | { type: 'orders'; payload: PendingOrder[] }
   | { type: 'error'; payload: { message: string } };
 
 export interface ManualOrderRequest {
