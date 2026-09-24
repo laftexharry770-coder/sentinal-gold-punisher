@@ -1,9 +1,13 @@
-import { Router, type Request, type Response } from 'express';
+import express, { Router, type Request, type Response } from 'express';
 import {
   CommandError,
+  MetaApiAccount,
   addAccount,
+  addMetaApiFollower,
   closeAll,
   closePosition,
+  configureExpert,
+  loadStrategy,
   modifyPosition,
   placeOrder,
   removeAccount,
@@ -11,9 +15,11 @@ import {
   stopBot,
   updateAccount,
   updateBotConfig,
-  type Runtime,
+  useBuiltinStrategy,
+  type StrategyFile,
 } from '@sentinal/engine';
 import type { BotConfig, CopySettings } from '@sentinal/shared';
+import type { ServerContext } from './app.js';
 
 function asNumber(value: unknown): number | undefined {
   if (value === null || value === undefined || value === '') return undefined;
@@ -83,6 +89,16 @@ export function parseBotPatch(body: Record<string, unknown>): Partial<BotConfig>
   }
   if (typeof body.symbol === 'string' && body.symbol.trim()) patch.symbol = body.symbol.trim();
 
+  const dispatch = body.dispatch;
+  if (dispatch && typeof dispatch === 'object') {
+    const src = dispatch as Record<string, unknown>;
+    const next: Partial<BotConfig['dispatch']> = {};
+    if (src.mode === 'simultaneous' || src.mode === 'after-fill') next.mode = src.mode;
+    const cancel = asBoolean(src.cancelOrphans);
+    if (cancel !== undefined) next.cancelOrphans = cancel;
+    patch.dispatch = next as BotConfig['dispatch'];
+  }
+
   const zl = body.zeroLoss;
   if (zl && typeof zl === 'object') {
     const src = zl as Record<string, unknown>;
@@ -131,15 +147,78 @@ function fail(res: Response, err: unknown): void {
   res.status(500).json({ error: err instanceof Error ? err.message : 'unexpected error' });
 }
 
-export function createRouter(runtime: Runtime): Router {
+/** Uploaded strategy files, checked for shape before they reach the compiler. */
+function parseFiles(body: unknown): StrategyFile[] {
+  const files = (body as { files?: unknown } | null)?.files;
+  if (!Array.isArray(files) || files.length === 0) throw new CommandError('Send the strategy as { files: [{ name, content, encoding }] }.');
+  return files.map((f) => {
+    const file = f as Record<string, unknown>;
+    if (typeof file.name !== 'string' || typeof file.content !== 'string') throw new CommandError('Each file needs a name and content.');
+    return { name: file.name, content: file.content, encoding: file.encoding === 'base64' ? 'base64' : 'text' };
+  });
+}
+
+export function createRouter(context: ServerContext): Router {
   const router = Router();
+  const { runtime } = context;
   const { accounts, bot, journal } = runtime;
 
   router.get('/health', (_req, res) => {
-    res.json({ ok: true, uptime: process.uptime(), quote: runtime.feed.quote });
+    res.json({ ok: true, uptime: process.uptime(), quote: runtime.feed.quote, session: context.session().status });
   });
 
   router.get('/state', (_req, res) => res.json(runtime.snapshot()));
+
+  router.get('/session', (_req, res) => res.json(context.session()));
+
+  /* ----------------------------- MetaApi ----------------------------- */
+
+  const gateway = () => {
+    if (!context.gateway) throw new CommandError('This server has no METAAPI_TOKEN.', 404);
+    return context.gateway;
+  };
+
+  router.get('/metaapi/accounts', async (_req, res) => {
+    try {
+      res.json(await gateway().listAccounts());
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  router.post('/metaapi/accounts', async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      if (typeof body.login !== 'string' || typeof body.password !== 'string' || typeof body.server !== 'string') {
+        throw new CommandError('login, password and server are required');
+      }
+      res.status(201).json(
+        await gateway().provision({
+          name: typeof body.name === 'string' ? body.name : '',
+          login: body.login.trim(),
+          password: body.password,
+          server: body.server.trim(),
+          platform: body.platform === 'mt4' ? 'mt4' : 'mt5',
+        }),
+      );
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  router.post('/metaapi/followers', async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      const link = context.link();
+      if (!link) throw new CommandError('The MetaApi master is not connected yet.', 409);
+      if (typeof body.metaApiId !== 'string') throw new CommandError('metaApiId is required');
+      const copy = body.copy && typeof body.copy === 'object' ? parseCopyPatch(body.copy as Record<string, unknown>) : {};
+      const account = await addMetaApiFollower(runtime, gateway(), link, body.metaApiId, copy);
+      res.status(201).json(account.state());
+    } catch (err) {
+      fail(res, err);
+    }
+  });
 
   /* ---------------------------- accounts ---------------------------- */
 
@@ -186,7 +265,23 @@ export function createRouter(runtime: Runtime): Router {
 
   router.delete('/accounts/:id', (req, res) => {
     try {
+      const link = context.link();
+      if (link && link.master.id === req.params.id) {
+        throw new CommandError('The master is set by METAAPI_MASTER_ID; change it there and restart.', 409);
+      }
+      if (link) link.followers = link.followers.filter((f) => f.id !== req.params.id);
       res.json(removeAccount(runtime, req.params.id as string));
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  router.post('/accounts/:id/stream-every-tick', async (req, res) => {
+    try {
+      const account = accounts.get(req.params.id as string);
+      if (!(account instanceof MetaApiAccount)) throw new CommandError('Only MetaApi accounts stream quotes.', 404);
+      await account.streamEveryTick();
+      res.json(account.state());
     } catch (err) {
       fail(res, err);
     }
@@ -274,6 +369,48 @@ export function createRouter(runtime: Runtime): Router {
 
   router.post('/bot/stop', (req, res) => {
     res.json(stopBot(runtime, asBoolean((req.body ?? {}).closePositions) ?? false));
+  });
+
+  /* ----------------------------- strategy ---------------------------- */
+
+  // An .ex5 arrives as base64, so this route takes larger bodies than the rest.
+  router.post('/strategy', express.json({ limit: '12mb' }), async (req, res) => {
+    try {
+      const files = parseFiles(req.body);
+      const outcome = await loadStrategy(runtime, files);
+      if (outcome.kind === 'ex5' || outcome.result.ok) context.state.saveStrategy(files);
+      res.json(outcome);
+    } catch (err) {
+      fail(res, err);
+    }
+  });
+
+  router.post('/strategy/builtin', (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const strategy =
+      body.strategy === 'adaptive-scalp' || body.strategy === 'momentum' || body.strategy === 'mean-reversion' ? body.strategy : undefined;
+    context.state.saveStrategy(null);
+    res.json(useBuiltinStrategy(runtime, strategy));
+  });
+
+  router.patch('/strategy/expert', async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      const inputs: Record<string, string | number | boolean> = {};
+      if (body.inputs && typeof body.inputs === 'object') {
+        for (const [key, value] of Object.entries(body.inputs as Record<string, unknown>)) {
+          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') inputs[key] = value;
+        }
+      }
+      res.json(
+        await configureExpert(runtime, {
+          inputs: body.inputs && typeof body.inputs === 'object' ? inputs : undefined,
+          timeframe: asNumber(body.timeframe),
+        }),
+      );
+    } catch (err) {
+      fail(res, err);
+    }
   });
 
   router.get('/recoveries', (_req, res) => res.json(bot.listRecoveries()));

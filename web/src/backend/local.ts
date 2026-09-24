@@ -3,6 +3,7 @@ import {
   MetaApiAccount,
   MetaApiGateway,
   addAccount,
+  addMetaApiFollower,
   attachMetaApi,
   closeAll,
   closePosition,
@@ -337,22 +338,7 @@ export function createLocalBackend(): TerminalBackend {
     addMetaApiFollower: async (metaApiId: string, copy: Partial<CopySettings>) => {
       const rt = requireRuntime();
       if (!gateway || !link) throw new Error('Followers from MetaApi need a MetaApi session.');
-      const summary = (await gateway.listAccounts()).find((s) => s.id === metaApiId);
-      if (!summary) throw new Error('That account is not on this MetaApi token.');
-      if (rt.accounts.list().some((a) => a.config.metaApiId === metaApiId)) throw new Error(`${summary.name} is already linked.`);
-      const account = rt.accounts.add({
-        name: summary.name,
-        provider: 'metaapi',
-        metaApiId,
-        login: summary.login,
-        server: summary.server,
-        broker: summary.server,
-        role: 'slave',
-        initialBalance: 0,
-        copy: { sizing: 'multiplier', multiplier: 1, ...copy, enabled: true, masterId: link.master.id },
-      });
-      if (account instanceof MetaApiAccount) link.followers.push(account);
-      return account.state();
+      return (await addMetaApiFollower(rt, gateway, link, metaApiId, copy)).state();
     },
 
     updateAccount: async (id, patch: { name?: string; role?: AccountState['role']; copy?: Partial<CopySettings> }) =>

@@ -13,6 +13,7 @@ export { AccountManager, type AccountFactory, type NewAccountInput } from './bro
 export {
   MetaApiAccount,
   MetaApiGateway,
+  addMetaApiFollower,
   attachMetaApi,
   brokerSeconds,
   describeTradeError,

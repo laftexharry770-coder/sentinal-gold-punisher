@@ -4,11 +4,29 @@ primary_region = "iad"
 [build]
   dockerfile = "Dockerfile"
 
+# iad (Ashburn, Virginia) sits beside MetaApi's vint-hill and new-york
+# regions, which keeps every order's trip to MetaApi as short as it gets.
+# Put your MetaApi accounts in one of those regions too.
+#
+# Secrets, set with `fly secrets set NAME=value`:
+#   METAAPI_TOKEN         API access token from app.metaapi.cloud
+#   METAAPI_MASTER_ID     MetaApi id of the master account
+#   METAAPI_FOLLOWER_IDS  comma-separated MetaApi ids of the followers
+#   ACCESS_KEY            required with LIVE_EXECUTION=true; open the site as https://<app>.fly.dev/?key=<ACCESS_KEY>
+#   LIVE_EXECUTION        "true" to send real orders (paper fills otherwise)
+#   AUTO_START_BOT        "true" to start the bot by itself after every deploy
 [env]
   PORT = "4000"
   HOST = "0.0.0.0"
   SERVE_WEB = "true"
   TICK_INTERVAL_MS = "400"
+  STATE_DIR = "/data"
+
+# The uploaded strategy and settings survive deploys on this volume:
+#   fly volumes create sentinal_data --size 1 --region iad
+[mounts]
+  source = "sentinal_data"
+  destination = "/data"
 
 [http_service]
   internal_port = 4000

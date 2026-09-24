@@ -1646,3 +1646,34 @@ export async function attachMetaApi(runtime: Runtime, gateway: MetaApiGateway, s
     },
   };
 }
+
+/**
+ * Links another account of the same MetaApi token as a follower of the
+ * link's master. It connects on its own streaming connection and copies from
+ * the next order on.
+ */
+export async function addMetaApiFollower(
+  runtime: Runtime,
+  gateway: MetaApiGateway,
+  link: MetaApiLink,
+  metaApiId: string,
+  copy: Partial<CopySettings> = {},
+): Promise<MetaApiAccount> {
+  const summary = (await gateway.listAccounts()).find((s) => s.id === metaApiId);
+  if (!summary) throw new Error('That account is not on this MetaApi token.');
+  if (metaApiId === link.master.metaApiId) throw new Error(`${summary.name} is the master.`);
+  if (runtime.accounts.list().some((a) => a.config.metaApiId === metaApiId)) throw new Error(`${summary.name} is already linked.`);
+  const account = runtime.accounts.add({
+    name: summary.name,
+    provider: 'metaapi',
+    metaApiId,
+    login: summary.login,
+    server: summary.server,
+    broker: summary.server,
+    role: 'slave',
+    initialBalance: 0,
+    copy: { ...DEFAULT_COPY_SETTINGS, sizing: 'multiplier', multiplier: 1, ...copy, enabled: true, masterId: link.master.id },
+  }) as MetaApiAccount;
+  link.followers.push(account);
+  return account;
+}

@@ -11,12 +11,45 @@ import type {
 } from './types';
 
 const BASE = '/api';
+const KEY_STORAGE = 'sentinal.serverKey';
+
+/**
+ * The server's access key: taken once from a ?key= link, then remembered in
+ * this browser and dropped from the address bar so it is not shared by accident.
+ */
+function accessKey(): string {
+  try {
+    const url = new URL(window.location.href);
+    const fromLink = url.searchParams.get('key');
+    if (fromLink) {
+      localStorage.setItem(KEY_STORAGE, fromLink);
+      url.searchParams.delete('key');
+      window.history.replaceState(window.history.state, '', url);
+      return fromLink;
+    }
+    return localStorage.getItem(KEY_STORAGE) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function askForKey(): void {
+  const key = window.prompt('This Sentinal server needs its access key (ACCESS_KEY):');
+  if (!key) return;
+  try {
+    localStorage.setItem(KEY_STORAGE, key.trim());
+  } catch {
+    /* without storage the key lasts for this page only */
+  }
+  window.location.reload();
+}
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'content-type': 'application/json' },
     ...init,
+    headers: { 'content-type': 'application/json', 'x-sentinal-key': accessKey() },
   });
+  if (res.status === 401) askForKey();
   const text = await res.text();
   const body = text ? (JSON.parse(text) as unknown) : null;
   if (!res.ok) {
@@ -82,7 +115,8 @@ export function createRemoteBackend(): TerminalBackend {
 
       const connect = () => {
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
+        const key = accessKey();
+        socket = new WebSocket(`${protocol}://${window.location.host}/ws${key ? `?key=${encodeURIComponent(key)}` : ''}`);
 
         socket.onopen = () => {
           retry = 0;
@@ -95,9 +129,13 @@ export function createRemoteBackend(): TerminalBackend {
             /* malformed frame — drop it rather than tearing the socket down */
           }
         };
-        socket.onclose = () => {
+        socket.onclose = (event) => {
           onStatus(false);
           if (disposed) return;
+          if (event.code === 4401) {
+            askForKey();
+            return;
+          }
           // Back off up to 8s so a restarting server is not hammered.
           retry = Math.min(retry + 1, 8);
           timer = window.setTimeout(connect, retry * 1000);

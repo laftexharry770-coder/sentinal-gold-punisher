@@ -3,6 +3,8 @@ services:
   - type: web
     name: sentinal-mt5
     runtime: node
+    # A copier must stay awake: the free plan sleeps when idle, so use a paid
+    # instance (and a region near your MetaApi accounts) for real trading.
     plan: free
     buildCommand: npm ci && npm run build
     startCommand: npm start
@@ -15,3 +17,16 @@ services:
       # Quote cadence for the simulated XAUUSD feed, milliseconds per tick.
       - key: TICK_INTERVAL_MS
         value: "400"
+      # MetaApi: set these in the Render dashboard (they are secrets).
+      - key: METAAPI_TOKEN
+        sync: false
+      - key: METAAPI_MASTER_ID
+        sync: false
+      - key: METAAPI_FOLLOWER_IDS
+        sync: false
+      - key: ACCESS_KEY
+        sync: false
+      - key: LIVE_EXECUTION
+        value: "false"
+      - key: AUTO_START_BOT
+        value: "false"
