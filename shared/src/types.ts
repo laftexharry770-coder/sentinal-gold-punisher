@@ -229,7 +229,9 @@ export type CloseReason =
   | 'basket-sl'
   | 'copy'
   | 'bot-stop'
-  | 'daily-limit';
+  | 'daily-limit'
+  /** The broker closed it for lack of margin. */
+  | 'stop-out';
 
 export interface ClosedTrade {
   id: string;

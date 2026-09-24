@@ -367,6 +367,25 @@ export class TradingAccount extends Emitter {
       .filter((t): t is ClosedTrade => t !== null);
   }
 
+  /**
+   * Asks for every matching position to be closed and says how many requests
+   * went out. A simulated book closes on the spot; a broker account sends the
+   * closes together and books each one as its broker confirms it.
+   */
+  requestCloseAll(reason: CloseReason, filter?: (p: Position) => boolean): number {
+    return this.closeAll(reason, filter).length;
+  }
+
+  /**
+   * The account is leaving the terminal. A simulated book has nowhere else to
+   * live, so its positions close; a broker account keeps its positions at the
+   * broker and only drops the connection.
+   */
+  release(): void {
+    this.closeAll('manual');
+    this.disconnect();
+  }
+
   modify(id: string, stopLoss: number | null, takeProfit: number | null): boolean {
     const position = this.positions.get(id);
     if (!position) return false;

@@ -10,6 +10,23 @@ export {
   type PendingResult,
 } from './broker/account.js';
 export { AccountManager, type AccountFactory, type NewAccountInput } from './broker/manager.js';
+export {
+  MetaApiAccount,
+  MetaApiGateway,
+  attachMetaApi,
+  brokerSeconds,
+  describeTradeError,
+  findGoldSymbol,
+  serverOffsetOf,
+  type MetaApiAccountOptions,
+  type MetaApiAccountSummary,
+  type MetaApiClient,
+  type MetaApiLink,
+  type MetaApiSelection,
+  type MtAccount,
+  type MtConnection,
+  type ProvisionInput,
+} from './broker/metaapi.js';
 export { BotEngine } from './engine/bot.js';
 export { CopyTradeEngine, baseSymbol } from './engine/copier.js';
 export { ExpertRunner, retcodeFor, type HistoryProvider } from './engine/expert.js';

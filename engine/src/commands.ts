@@ -1,5 +1,4 @@
 import {
-  getSymbolSpec,
   roundLot,
   type AccountConfig,
   type AccountState,
@@ -95,8 +94,11 @@ export async function placeOrder(
   if (!account) throw new CommandError('account not found', 404);
   if (input.side !== 'buy' && input.side !== 'sell') throw new CommandError('side must be buy or sell');
 
-  const symbol = input.symbol?.toUpperCase() || runtime.bot.config.symbol;
-  const spec = getSymbolSpec(symbol);
+  // Broker symbol names are case-sensitive (Exness trades XAUUSDm), so a typed
+  // name is matched to the account's own rather than upper-cased.
+  const typed = input.symbol?.trim();
+  const symbol = !typed || typed.toUpperCase() === account.symbol.toUpperCase() ? account.symbol : typed;
+  const spec = account.spec(symbol);
   const volume = roundLot(spec, input.volume ?? runtime.bot.config.lotSize);
   const legs = Math.max(1, Math.min(50, Math.round(input.legs ?? 1)));
 
@@ -120,7 +122,11 @@ export async function placeOrder(
 export async function closePosition(runtime: Runtime, id: string): Promise<ClosedTrade> {
   const account = runtime.accounts.list().find((a) => a.getPosition(id));
   if (!account) throw new CommandError('position not found', 404);
-  const trade = await account.submitClose(id, 'manual');
+  // A master's close goes out with its copies' closes in the same instant.
+  const trade =
+    account.config.role === 'master'
+      ? await runtime.copier.close(account, id, 'manual')
+      : await account.submitClose(id, 'manual');
   if (!trade) throw new CommandError('close rejected by broker', 422);
   runtime.journal.write(
     'trade',
@@ -137,25 +143,29 @@ export function closeAll(runtime: Runtime, input: CloseAllInput): { closed: numb
 
   let closed = 0;
   for (const account of targets) {
-    closed += account.closeAll('manual', (p) => {
+    closed += account.requestCloseAll('manual', (p) => {
       if (input.side && p.side !== input.side) return false;
       if (input.profitableOnly && p.profit <= 0) return false;
       return true;
-    }).length;
+    });
   }
-  runtime.journal.write('warn', input.accountId ?? null, `Bulk close executed — ${closed} position(s)`);
+  runtime.journal.write('warn', input.accountId ?? null, `Bulk close sent — ${closed} position(s)`);
   return { closed };
 }
 
-export function modifyPosition(
+export async function modifyPosition(
   runtime: Runtime,
   id: string,
   stopLoss: number | null,
   takeProfit: number | null,
-): Position {
+): Promise<Position> {
   const account = runtime.accounts.list().find((a) => a.getPosition(id));
   if (!account) throw new CommandError('position not found', 404);
-  account.modify(id, stopLoss, takeProfit);
+  const result =
+    account.config.role === 'master'
+      ? await runtime.copier.modify(account, id, stopLoss, takeProfit)
+      : await account.submitModify(id, stopLoss, takeProfit);
+  if (!result.ok) throw new CommandError(`modify rejected: ${result.error}`, 422);
   return account.getPosition(id) as Position;
 }
 

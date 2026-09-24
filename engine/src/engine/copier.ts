@@ -92,7 +92,62 @@ export class CopyTradeEngine extends Emitter {
     this.accounts.on('modified', (position: Position) => {
       void this.onMasterModify(position);
     });
+    // A broker account (re)synchronised: copies it holds can be matched again.
+    this.accounts.on('synced', () => this.relink());
   }
+
+  /** The client id a follower's copy of a master position carries. */
+  static copyClientId(masterTicket: number): string | null {
+    return masterTicket > 0 ? `M${masterTicket.toString(36)}` : null;
+  }
+
+  /**
+   * Rebuilds master → copy links from the client ids on the broker's books,
+   * so closes and stop changes keep reaching the copies after the terminal
+   * restarts. A copy whose master position is gone is reported, not closed:
+   * whether to close it is the operator's call.
+   */
+  relink(): void {
+    for (const master of this.accounts.list().filter((a) => a.config.role === 'master')) {
+      const followers = this.accounts.slavesOf(master.id);
+      if (followers.length === 0) continue;
+      const claimed = new Set<string>();
+      for (const position of master.listPositions()) {
+        const keys = new Set<string>();
+        if (position.clientId) keys.add(position.clientId);
+        const copyId = CopyTradeEngine.copyClientId(position.ticket);
+        if (copyId) keys.add(copyId);
+        const existing = this.links.get(position.id) ?? [];
+        const linked = new Set(existing.map((l) => l.positionId));
+        const found: Link[] = [];
+        for (const follower of followers) {
+          for (const copy of follower.listPositions()) {
+            if (!copy.clientId || !keys.has(copy.clientId)) continue;
+            claimed.add(copy.id);
+            if (linked.has(copy.id)) continue;
+            copy.sourceId = position.id;
+            found.push({ accountId: follower.id, positionId: copy.id });
+          }
+        }
+        if (found.length > 0) this.links.set(position.id, [...existing, ...found]);
+      }
+      if (!master.connected) continue;
+      for (const follower of followers) {
+        if (!follower.connected) continue;
+        for (const copy of follower.listPositions()) {
+          if (copy.origin !== 'copy' || claimed.has(copy.id) || this.orphansReported.has(copy.id)) continue;
+          this.orphansReported.add(copy.id);
+          this.journal.write(
+            'warn',
+            follower.id,
+            `#${copy.ticket} on ${follower.config.name} is a copy whose master position is no longer open — close it if the master closed while the terminal was offline`,
+          );
+        }
+      }
+    }
+  }
+
+  private readonly orphansReported = new Set<string>();
 
   recent(): DispatchReport[] {
     return this.reports;
@@ -411,8 +466,10 @@ export class CopyTradeEngine extends Emitter {
       recoveryLayer: position.recoveryLayer,
       magic: position.magic,
     };
+    // Copies carry the master's ticket in their client id so they can be matched after a restart.
+    const tagged: OpenRequest = { ...req, clientId: CopyTradeEngine.copyClientId(position.ticket) };
     const plans = followers
-      .map((f) => ({ account: f, req: this.mirrorRequest(master, f, req, position.openPrice, position.id) }))
+      .map((f) => ({ account: f, req: this.mirrorRequest(master, f, tagged, position.openPrice, position.id) }))
       .filter((p): p is { account: TradingAccount; req: OpenRequest } => p.req !== null);
     if (plans.length === 0) return;
 

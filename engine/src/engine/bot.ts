@@ -95,7 +95,7 @@ export class BotEngine extends Emitter {
   /** Closes the matching bot legs, each with its copies, all at once. */
   private closeLegs(account: TradingAccount, reason: ClosedTrade['reason'], filter: (p: Position) => boolean): number {
     const legs = account.listPositions().filter(filter);
-    if (!this.dispatcher) return account.closeAll(reason, filter).length;
+    if (!this.dispatcher) return account.requestCloseAll(reason, filter);
     for (const leg of legs) void this.dispatcher.close(account, leg.id, reason);
     return legs.length;
   }
@@ -183,7 +183,7 @@ export class BotEngine extends Emitter {
       for (const account of this.accounts.list()) {
         // Copies close with their master; followers are flattened directly only for legs without one.
         const filter = (p: Position) => BOT_ORIGINS.has(p.origin) || (p.origin === 'copy' && !p.sourceId);
-        const count = account === primary ? this.closeLegs(account, 'bot-stop', filter) : account.closeAll('bot-stop', filter).length;
+        const count = account === primary ? this.closeLegs(account, 'bot-stop', filter) : account.requestCloseAll('bot-stop', filter);
         if (count > 0) {
           this.journal.write('warn', account.id, `Flattened ${count} bot position(s) on stop`);
         }

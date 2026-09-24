@@ -81,7 +81,7 @@ export function parseBotPatch(body: Record<string, unknown>): Partial<BotConfig>
   ) {
     patch.strategy = body.strategy;
   }
-  if (typeof body.symbol === 'string' && body.symbol.trim()) patch.symbol = body.symbol.trim().toUpperCase();
+  if (typeof body.symbol === 'string' && body.symbol.trim()) patch.symbol = body.symbol.trim();
 
   const zl = body.zeroLoss;
   if (zl && typeof zl === 'object') {
@@ -242,11 +242,11 @@ export function createRouter(runtime: Runtime): Router {
     }
   });
 
-  router.patch('/positions/:id', (req, res) => {
+  router.patch('/positions/:id', async (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     try {
       res.json(
-        modifyPosition(
+        await modifyPosition(
           runtime,
           req.params.id as string,
           asNullableNumber(body.stopLoss) ?? null,

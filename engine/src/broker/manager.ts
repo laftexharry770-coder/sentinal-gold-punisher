@@ -126,8 +126,7 @@ export class AccountManager extends Emitter {
   remove(id: string): boolean {
     const account = this.accounts.get(id);
     if (!account) return false;
-    account.closeAll('manual');
-    account.disconnect();
+    account.release();
     account.removeAllListeners();
     this.accounts.delete(id);
     // Orphaned followers fall back to standalone rather than silently idling.
@@ -152,6 +151,8 @@ export class AccountManager extends Emitter {
     account.on('modified', (position: Position) => this.emit('modified', position, account));
     account.on('orders', () => this.emit('orders', this.allOrders()));
     account.on('changed', () => this.emit('changed', account));
+    // A broker account finished (re)synchronising its book: links can be rebuilt.
+    account.on('synced', () => this.emit('synced', account));
   }
 
   allOrders(): PendingOrder[] {
