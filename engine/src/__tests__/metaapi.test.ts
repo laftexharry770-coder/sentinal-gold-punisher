@@ -322,7 +322,12 @@ describe('copying between MetaApi accounts', () => {
       name: 'Follower', provider: 'metaapi', metaApiId: 'ma-follower', login: '2', server: 'y', role: 'slave',
       copy: { enabled: true, masterId: master2.id, sizing: 'multiplier', multiplier: 2 },
     }) as MetaApiAccount;
+    const sentBefore = followerConn.sent.length;
     await Promise.all([master2.ready(), follower2.ready()]);
+    await settle(30);
+    // Nothing is copied twice: the follower already holds this trade.
+    expect(followerConn.sent.length).toBe(sentBefore);
+    expect(follower2.listPositions()).toHaveLength(1);
     const masterPosition = master2.listPositions()[0]!;
     expect(masterPosition.origin).toBe('bot');
     expect(follower2.listPositions()[0]!.origin).toBe('copy');

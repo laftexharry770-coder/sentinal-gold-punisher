@@ -467,8 +467,13 @@ export class CopyTradeEngine extends Emitter {
       magic: position.magic,
     };
     // Copies carry the master's ticket in their client id so they can be matched after a restart.
-    const tagged: OpenRequest = { ...req, clientId: CopyTradeEngine.copyClientId(position.ticket) };
+    const copyId = CopyTradeEngine.copyClientId(position.ticket);
+    const tagged: OpenRequest = { ...req, clientId: copyId };
+    // A follower already holding this trade (found on its own book) is never sent it twice.
+    const holds = (f: TradingAccount) =>
+      f.listPositions().some((p) => p.clientId !== null && (p.clientId === copyId || (position.clientId !== null && p.clientId === position.clientId)));
     const plans = followers
+      .filter((f) => !holds(f))
       .map((f) => ({ account: f, req: this.mirrorRequest(master, f, tagged, position.openPrice, position.id) }))
       .filter((p): p is { account: TradingAccount; req: OpenRequest } => p.req !== null);
     if (plans.length === 0) return;

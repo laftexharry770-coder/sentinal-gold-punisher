@@ -800,9 +800,12 @@ export class MetaApiAccount extends TradingAccount {
     this.byTicket.set(ticket, position.id);
     this.positions.set(position.id, position);
 
-    // A position found on reconnection that opened moments ago is still news;
-    // anything older is existing exposure and is adopted without copying it.
-    const fresh = live || Date.now() - position.openTime < 60_000;
+    // News is a position opened while connected. What the first
+    // synchronisation finds is existing exposure — possibly copied already by
+    // an earlier session — and is adopted without copying it. After a
+    // reconnection, a trade MetaTrader itself opened during the gap moments
+    // ago is still news, so mirror mode does not miss it.
+    const fresh = this.synced && (live || (position.origin === 'external' && Date.now() - position.openTime < 60_000));
     if (fresh) {
       this.emit('opened', position, this);
     } else {
