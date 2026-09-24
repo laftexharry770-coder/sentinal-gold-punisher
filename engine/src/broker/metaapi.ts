@@ -1589,7 +1589,7 @@ export async function attachMetaApi(runtime: Runtime, gateway: MetaApiGateway, s
   const log = (level: 'info' | 'warn' | 'error', message: string, accountId: string) =>
     runtime.journal.write(level, accountId, message);
   runtime.accounts.registerProvider('metaapi', gateway.factory({ paper: selection.paper, log }));
-  runtime.expert.setHistoryProvider(gateway.history());
+  runtime.experts.setHistoryProvider(gateway.history());
 
   const describe = (id: string) => {
     const summary = summaries.get(id);

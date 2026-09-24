@@ -18,8 +18,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "@sentinal/mql5": "*",
     "@sentinal/shared": "*",
-    "@sentinal/mql5": "*"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

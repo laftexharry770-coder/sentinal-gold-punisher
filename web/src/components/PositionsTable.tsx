@@ -56,7 +56,7 @@ export function PositionsTable({
       {/* Desktop / tablet */}
       <table className="hidden w-full min-w-[720px] border-collapse text-sm md:table">
         <thead className="sticky top-0 z-10 bg-[var(--color-surface)]">
-          <tr className="text-left text-[0.6875rem] uppercase tracking-[0.06em] text-[var(--color-ink-muted)]">
+          <tr className="text-left text-[0.71875rem] font-medium text-[var(--color-ink-muted)]">
             <th className="px-3 py-2 font-semibold">Ticket</th>
             {showAccount && <th className="px-3 py-2 font-semibold">Account</th>}
             <th className="px-3 py-2 font-semibold">Symbol</th>
@@ -161,19 +161,19 @@ export function PositionsTable({
             </div>
             <dl className="tabular mt-2.5 grid grid-cols-4 gap-2 border-t border-[var(--color-line)] pt-2 text-xs">
               <div>
-                <dt className="text-[0.625rem] uppercase text-[var(--color-ink-muted)]">Entry</dt>
+                <dt className="text-[0.6875rem] text-[var(--color-ink-muted)]">Entry</dt>
                 <dd>{formatPrice(position.openPrice)}</dd>
               </div>
               <div>
-                <dt className="text-[0.625rem] uppercase text-[var(--color-ink-muted)]">Now</dt>
+                <dt className="text-[0.6875rem] text-[var(--color-ink-muted)]">Now</dt>
                 <dd>{formatPrice(position.currentPrice)}</dd>
               </div>
               <div>
-                <dt className="text-[0.625rem] uppercase text-[var(--color-ink-muted)]">S/L</dt>
+                <dt className="text-[0.6875rem] text-[var(--color-ink-muted)]">S/L</dt>
                 <dd>{position.stopLoss ? formatPrice(position.stopLoss) : '—'}</dd>
               </div>
               <div>
-                <dt className="text-[0.625rem] uppercase text-[var(--color-ink-muted)]">T/P</dt>
+                <dt className="text-[0.6875rem] text-[var(--color-ink-muted)]">T/P</dt>
                 <dd>{position.takeProfit ? formatPrice(position.takeProfit) : '—'}</dd>
               </div>
             </dl>

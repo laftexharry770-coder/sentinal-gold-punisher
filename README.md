@@ -1,10 +1,11 @@
 # Sentinal MT5 — Gold Punisher
 
 XAUUSD trading terminal for MetaTrader 4 and 5, connected through
-[MetaApi](https://metaapi.cloud). It runs **your own expert advisor** — upload the
-`.mq5` and it compiles and trades inside Sentinal — or its built-in models, and it
-copies the master account to any number of follower accounts, sending every order to
-all of them **in the same instant**.
+[MetaApi](https://metaapi.cloud). It runs **as many of your own expert advisors as you
+like** — upload the `.mq5` files and they compile and trade inside Sentinal, several at
+once — beside a built-in model: **Burst**, or an **AI** that learns the market as it
+trades, which Claude can review. It copies the master account to any number of follower
+accounts, sending every order to all of them **in the same instant**.
 
 ```
 web/      React + Vite terminal (phone, tablet and desktop layouts)
@@ -50,10 +51,21 @@ dialled when an order is due.
 
 ## Strategies — change them any time
 
-Choose on the MT5 Control screen (**Burst**, **Angel Bot** or **your EA**) or Settings →
-**Strategy**. An uploaded EA stays saved while Burst trades, so switching back needs no
-second upload; whatever is chosen is kept for the next visit (browser) or the next
-restart (server).
+Two things decide the trades, and both can be changed at any moment, even while the bot
+runs (MT5 control screen, or Trade settings → **Strategy**):
+
+- **The built-in model** — **Burst**, **AI** or **Off**. Changing it stops the bot first,
+  so a new model never inherits a book it did not open; open positions stay open.
+- **The EA library** — every `.mq5` and `.ex5` you add, **as many as you like, several
+  switched on at once**. Each has its own switch, inputs and chart timeframe; switching
+  one on or off takes effect at once, even while the bot runs. Every EA switched on runs
+  on the master beside the built-in model, and each one's orders reach every follower in
+  the same instant. Positions stay with whoever opened them: the built-in model manages
+  only its own (magic `20260811`), and each EA sees its own.
+
+The library is kept for the next visit (browser: IndexedDB) or the next restart (server:
+`STATE_DIR/experts/`). A single EA saved by an earlier version is moved into it, and
+Angel Bot is added once, switched off.
 
 - **Burst** (the default) trades the way the MT5 Control recording does. When the book is
   flat it opens a burst of **0.01-lot positions all at once** — **16 for every $10 of
@@ -68,9 +80,15 @@ restart (server).
   the Settings card shows, for your balance, what the next burst makes at take profit —
   and how small a move against it costs the whole balance when it has no stop. Followers
   copy each position; a follower with **balance-ratio** sizing opens the burst its own
-  balance calls for instead (a $5 follower opens 8).
-- **Angel Bot** ships with the terminal (`mql5/samples/Angel_Bot.mq5`, v1.10) and runs
-  through the MQL5 runtime below, no upload needed. It brackets price with a **buy stop
+  balance calls for instead (a $5 follower opens 8). With direction **AI** (the default),
+  each burst goes the way the AI calls it when it is confident, follows the trend when it
+  is not, and is held back when the AI expects the market to turn against the trend or
+  reads it as dangerous — a burst has no stop, so staying out is the AI's most useful call.
+- **AI** — the learning model described below trades on its own: one position at a
+  time by default, with a stop and target at the broker.
+- **Angel Bot** ships with the terminal (`mql5/samples/Angel_Bot.mq5`, v1.10) and sits
+  in the library, switched off, ready to switch on; it runs through the MQL5 runtime
+  below. It brackets price with a **buy stop
   and a sell stop**, re-prices them as price moves, tops up to its position cap, and trails
   one stop per basket, with a hard stop, a take profit and a daily target/loss lock. Its
   pending orders are **mirrored**: each follower holds the same stop orders at the same
@@ -84,25 +102,86 @@ restart (server).
   it would in MT5.
 - **Other built-in models** — adaptive scalp, momentum breakout, mean reversion, with the
   multi-position, basket and zero-loss controls described below.
-- **An `.mq5` expert advisor** (e.g. `Angel_Bot.mq5`) — drop the file in, with any
-  `.mqh` headers it includes. Sentinal compiles it and runs it on the master account:
+- **`.mq5` expert advisors** (e.g. `Angel_Bot.mq5`) — drop in as many files as you like
+  at once, with any `.mqh` headers they include. Sentinal compiles each one and runs it on
+  the master account:
   `OnInit`/`OnTick`/`OnTimer`/`OnTrade`/`OnTradeTransaction`/`OnDeinit`, `CTrade` and the
   rest of the Trade library, `OrderSend`, positions, orders, deals and history, account
   and symbol properties, `Copy*` series, the standard indicators (MA, RSI, ATR, ADX,
   Bands, MACD, Stochastic, CCI, SAR, Ichimoku, Alligator, Fractals and more, computed the
   way MT5 computes them), chart objects, global variables and files. Its inputs appear as
-  a form (groups, enums, colours, timeframes); applying them restarts the EA the way MT5
+  a form (groups, enums, colours, timeframes); applying them restarts that EA the way MT5
   does. Its `OrderSend` goes to the master **and every follower at once**. A compile
-  error names the file and line, and the previous strategy stays in place. Not
+  error names the file and line, and the rest of the library is added regardless. Not
   available: DLL `#import`, `iCustom` (a custom indicator's own code), `WebRequest`.
-- **An `.ex5`** — compiled code runs only inside MetaTrader, and MetaApi's cloud
-  terminals cannot host custom MT5 experts. So an `.ex5` switches Sentinal to **mirror
+- **`.ex5` files** — compiled code runs only inside MetaTrader, and MetaApi's cloud
+  terminals cannot host custom MT5 experts. So switching an `.ex5` on turns on **mirror
   mode**: attach the EA to the master account's chart in your own MT5 (desktop or VPS)
-  with Algo Trading on, start the bot here, and every position the EA opens, modifies or
+  with Algo Trading on, start the bot here, and every position it opens, modifies or
   closes is copied to the followers the moment MetaApi reports it. Uploading the `.mq5`
   instead removes the need to keep a MetaTrader terminal running.
-- **Load sample EA** loads `mql5/samples/Sentinal.mq5`, a complete trend-adaptive EA,
+- **Add sample EA** adds `mql5/samples/Sentinal.mq5`, a complete trend-adaptive EA,
   to see the pipeline work end to end.
+
+## The AI
+
+The AI is a model that learns from the gold market it watches, in the page or on the
+server. It does three jobs, each with its own switch in Trade settings → **AI**:
+
+1. **It trades** when it is the built-in model.
+2. **It directs Burst** when Burst's direction is **AI**.
+3. **It guards your EAs**: when it reads the market as dangerous, or is confident the
+   market is about to go against an EA's new entry, it refuses that entry the way a
+   broker would (`TRADE_RETCODE_REJECT`, "AI guard: …"). Closes, stop moves and cancels
+   always go through.
+
+**How it decides.** It builds one-minute bars from history and every quote, and classes
+the market as trend-up, trend-down, range, volatile or quiet. Eight experts read it:
+trend, momentum, breakout, mean reversion, volatility squeeze, order flow (upticks
+against downticks), candle patterns and time of day. Each regime has its own weights for
+the experts, learned from how often each one was right a few bars later. A calibrated
+logistic model turns their vote into a probability that price is higher after the
+horizon, refitted on its latest 500 outcomes. If its recent calls have no edge, it asks
+for more confidence before trading. It asks for more after a run of losses and in a
+regime that keeps losing. It stays out when it rates the market dangerous: volatility
+far above normal, a wide spread, a price jump or a burst of ticks.
+
+**How it trades.** An entry needs the probability to clear the threshold (60% by
+default). The stop is 1.5 × ATR, widened in volatile markets and tightened in ranges. The
+target is 1.5–3 R, further when it is surer, and at most 1.8 R in a range. The size risks
+1% of equity (never more than the cap, 2%); an entry is skipped when even the broker's
+minimum lot would risk more. The position moves to break-even after 1 ATR, then trails.
+It is closed when the AI's read flips against it. A daily loss limit stops it for the
+day. It waits 1 bar after a win and 3 after a loss.
+
+**What it cannot do is know the future.** Measured on simulated markets it has never
+seen: in pure noise it trades on 0–5.5% of bars and is right about half the time. In a
+weak trend it trades on 68–79% of bars and is right 68–75% of the time. In a strong trend
+it is right 90–93% of the time. Real gold is closer to the noise than any of these. The
+panel on the MT5 control screen shows what it sees: its call and confidence, each
+expert's vote and weight, the regime, the danger reading and its hit rate. The state it
+has learned is saved (browser storage, or `STATE_DIR` on the server), so it resumes where
+it left off.
+
+### Claude reviews
+
+With an Anthropic API key, Claude (the model is chosen in Settings → AI) reviews the AI every
+30 minutes and after every 10 trades (both editable), or when you press **Review now**.
+Claude reads the AI's recent trades, its accuracy per regime, its expert weights and its
+settings, then writes a short assessment. It may change a few settings, and only within
+limits the terminal enforces:
+
+- risk no higher than the cap, and at most twice its current value;
+- fewer open positions, never more;
+- trading in volatile markets only switched off;
+- expert weights scaled between 0.5× and 1.5×;
+- a pause of up to 4 hours.
+
+Changes apply at once, or wait for your **Approve** if auto-apply is off.
+
+In the browser the key is kept in that browser only and sent only to Anthropic. On the
+server, set `ANTHROPIC_API_KEY`. Reviews are billed to that key; the AI trades the same
+without one.
 
 ## Latency, honestly
 
@@ -163,8 +242,9 @@ pushes to `main`, and publishes it to the repository root and the `gh-pages` bra
 | `LIVE_EXECUTION` | `true` sends real orders; anything else fills on paper against real quotes. |
 | `ACCESS_KEY` | Required on every API call and the WebSocket; **mandatory with `LIVE_EXECUTION=true`**. Open the site once as `https://your-host/?key=YOUR_KEY` and the browser remembers it. |
 | `AUTO_START_BOT` | `true` starts the bot by itself after every restart or deploy. |
-| `STRATEGY_FILE` | An `.mq5`/`.ex5` on disk to load when none has been uploaded. |
-| `STATE_DIR` | Where the uploaded strategy, settings and EA global variables are kept (default `./data`). |
+| `STRATEGY_FILE` | An `.mq5`/`.ex5` on disk to add to the library when the library is empty. |
+| `STATE_DIR` | Where the EA library, settings, the AI's learned state and EA global variables are kept (default `./data`). |
+| `ANTHROPIC_API_KEY` | Lets Claude review the AI. Optional; reviews are billed to this key. |
 
 **Fly.io** — `fly.toml` builds the Dockerfile, keeps one machine awake and mounts
 `/data`:
@@ -252,16 +332,23 @@ Trading off.
 
 ## Screens
 
-1. **MT5 Control** — connection, the MT5 account (broker, login, server, account type),
-   live analysis whose every light reports measured state, and Start/Stop.
-2. **Chart & Trades** — candlestick chart with entry lines, portfolio tiles, multi-leg
+1. **MT5 control** — the master's equity, balance and floating result with Start/Stop.
+   Next to them: live analysis, where every light reports measured state; the built-in
+   model and each EA's switch; the AI panel; and the followers.
+2. **Chart & trades** — candlestick chart with entry lines, portfolio tiles, multi-leg
    quick trade, open book, fills and the log.
-3. **Bot Control Center** — statistics, per-account terminals, position management, the
+3. **Bot control center** — statistics, per-account terminals, position management, the
    recovery queue and the copy log.
-4. **Trade Settings** — strategy upload and EA inputs, copy dispatch, built-in model
-   risk, multi-position, basket, zero-loss and daily circuit breakers.
-5. **Accounts & Copying** — linked accounts with measured latency, follower routing,
+4. **Trade settings** — the built-in model and the EA library (inputs per EA), Burst,
+   the AI and Claude, copy dispatch, built-in model risk, multi-position, basket,
+   zero-loss, daily circuit breakers and appearance.
+5. **Accounts & copying** — linked accounts with measured latency, follower routing,
    adding followers, and the per-order copy latency log.
+
+**Light and dark.** The terminal follows the device's light or dark setting. The sun/moon
+button, or Trade settings → **Appearance** (System, Light, Dark), overrides it for that
+browser. Ice blue is the only accent colour: green and red mean profit and loss, and gold
+marks the gold price.
 
 ## API (server build)
 
@@ -273,11 +360,15 @@ Trading off.
 | `POST` | `/api/metaapi/followers` | Link another MetaApi account as a follower |
 | `GET/POST/PATCH/DELETE` | `/api/accounts[/:id]` | Link, retag or unlink accounts |
 | `POST` | `/api/accounts/:id/stream-every-tick` | Switch an account to tick-by-tick quotes |
-| `POST` | `/api/strategy` | Upload `{ files: [{ name, content, encoding }] }` — `.mq5`/`.mqh` text, `.ex5` base64 |
-| `POST` | `/api/strategy/builtin` | Back to the built-in models (the uploaded EA stays saved) |
-| `GET/DELETE` | `/api/strategy/saved` | The saved EA, or forget it |
-| `POST` | `/api/strategy/saved/use` | Make the saved EA the strategy again |
-| `PATCH` | `/api/strategy/expert` | EA inputs and chart timeframe |
+| `GET` | `/api/experts` | The EA library, with each EA's status |
+| `POST` | `/api/experts` | Add EAs: `{ files: [{ name, content, encoding }], enabled? }` — `.mq5`/`.mqh` text, `.ex5` base64, many at once |
+| `PATCH` | `/api/experts/:id` | Switch an EA on or off (`enabled`), or change its `inputs` and chart `timeframe` |
+| `DELETE` | `/api/experts/:id` | Remove an EA from the library |
+| `POST` | `/api/strategy/builtin` | The built-in model: `{ strategy: "burst" \| "ai" \| "none" \| … }` |
+| `GET` | `/api/ai` | The AI's reading, reviews, pause and guard statistics |
+| `POST` | `/api/ai/review` | Ask Claude for a review now (needs `ANTHROPIC_API_KEY`) |
+| `POST` | `/api/ai/pending/approve`, `/api/ai/pending/dismiss` | Apply or drop a review's suggestion waiting for approval |
+| `POST` | `/api/ai/resume` | End a pause Claude set |
 | `POST` | `/api/orders` | Manual order, `legs` for multi-entry |
 | `POST` | `/api/positions/:id/close`, `/api/positions/close-all` | Close one leg or a filtered set |
 | `PATCH` | `/api/positions/:id` | Move stop / target (copies follow) |
@@ -293,6 +384,10 @@ warns about full-access tokens in browsers — for a shared device, create a tok
 to the accounts it needs with MetaApi's Token Management API. The server keeps it in its
 environment, and refuses to send real orders without an `ACCESS_KEY`.
 
+The Anthropic key is handled the same way: in the browser build it is kept in that
+browser and sent only to Anthropic; on the server it is `ANTHROPIC_API_KEY` and never
+leaves it.
+
 ## Risk note
 
 Burst with no stop loss is the highest-risk way this terminal can trade: with $10 and 16
@@ -306,6 +401,11 @@ can hold 5 positions a side; on a $10 account one stopped basket is the balance.
 re-prices its stop orders often: through MetaApi each re-price is a request, and MetaApi
 limits how many an account may send, so test it on a demo account and watch the journal
 for refused modifies.
+
+The AI is a statistical model, not a forecast. It trades when its measured confidence
+clears a threshold, and it is wrong a large share of the time even then. Its stop limits
+each loss, not a run of them; the daily loss limit is what stops a bad day. Claude's
+reviews change settings within fixed limits; they cannot make the market predictable.
 
 Connecting alone never trades: fills are simulated against your broker's real quotes
 until you turn on **Send real orders to MetaTrader** (or `LIVE_EXECUTION=true`). With it

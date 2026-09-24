@@ -9,6 +9,8 @@ import express from 'express';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type {
   AccountState,
+  AiStatus,
+  ExpertSlot,
   Candle,
   ClosedTrade,
   DispatchReport,
@@ -137,6 +139,8 @@ runtime.bot.on('bot', (payload: { config: typeof runtime.bot.config; stats: Retu
 
 runtime.bot.on('recoveries', (payload: RecoveryTask[]) => broadcast({ type: 'recoveries', payload }));
 runtime.bot.on('strategy', (payload: StrategyInfo) => broadcast({ type: 'strategy', payload }));
+runtime.bot.on('experts', (payload: ExpertSlot[]) => broadcast({ type: 'experts', payload }));
+runtime.bot.on('ai', (payload: AiStatus) => broadcast({ type: 'ai', payload }));
 runtime.copier.on('dispatch', (payload: DispatchReport) => broadcast({ type: 'dispatch', payload }));
 runtime.accounts.on('orders', (payload: PendingOrder[]) => broadcast({ type: 'orders', payload }));
 runtime.accounts.on('partial', () => broadcast({ type: 'history', payload: runtime.accounts.allHistory() }));

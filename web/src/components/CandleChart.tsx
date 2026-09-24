@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Candle, Position, Tick } from '@sentinal/shared';
+import { useTheme, type Theme } from '../theme';
 
 interface Props {
   candles: Candle[];
@@ -14,20 +15,46 @@ const TIME_HEIGHT = 24;
 const MIN_BARS = 20;
 const MAX_BARS = 400;
 
-const COLORS = {
-  gridMinor: 'rgba(39, 44, 52, 0.5)',
-  gridMajor: 'rgba(52, 58, 68, 0.75)',
-  axis: '#71777f',
-  axisStrong: '#a9aeb7',
-  up: '#22d3a5',
-  down: '#ff5c7a',
-  wickUp: 'rgba(34, 211, 165, 0.8)',
-  wickDown: 'rgba(255, 92, 122, 0.8)',
-  price: '#d3a259',
-  buy: '#22d3a5',
-  sell: '#ff5c7a',
-  crosshair: 'rgba(169, 174, 183, 0.55)',
-  tagInk: '#140f05',
+/**
+ * The canvas cannot read CSS variables per stroke, so each theme's palette is
+ * spelled out here — the same values as the tokens in styles.css. Gold marks
+ * the live gold price; the crosshair tag is inverted, like the toasts.
+ */
+type Palette = Record<'gridMinor' | 'gridMajor' | 'axis' | 'up' | 'down' | 'wickUp' | 'wickDown' | 'price' | 'priceInk' | 'buy' | 'sell' | 'crosshair' | 'tag' | 'tagInk', string>;
+
+const PALETTES: Record<Theme, Palette> = {
+  dark: {
+    gridMinor: 'rgba(30, 37, 48, 0.7)',
+    gridMajor: 'rgba(43, 52, 65, 0.95)',
+    axis: '#6c7787',
+    up: '#2dd4a0',
+    down: '#ff6b81',
+    wickUp: 'rgba(45, 212, 160, 0.8)',
+    wickDown: 'rgba(255, 107, 129, 0.8)',
+    price: '#e9b44c',
+    priceInk: '#1a1204',
+    buy: '#2dd4a0',
+    sell: '#ff6b81',
+    crosshair: 'rgba(163, 173, 187, 0.55)',
+    tag: '#e9eef5',
+    tagInk: '#0a0d12',
+  },
+  light: {
+    gridMinor: 'rgba(226, 231, 238, 0.9)',
+    gridMajor: '#cfd7e2',
+    axis: '#76839a',
+    up: '#0e9a6c',
+    down: '#d9405c',
+    wickUp: 'rgba(14, 154, 108, 0.85)',
+    wickDown: 'rgba(217, 64, 92, 0.85)',
+    price: '#a86c12',
+    priceInk: '#ffffff',
+    buy: '#0e9a6c',
+    sell: '#d9405c',
+    crosshair: 'rgba(67, 81, 104, 0.5)',
+    tag: '#0d1726',
+    tagInk: '#ffffff',
+  },
 };
 
 /** What the pointer is over, in chart terms rather than pixels. */
@@ -67,6 +94,8 @@ function formatDay(time: number): string {
  * return to it.
  */
 export function CandleChart({ candles, quote, positions = [], height = 340, bars = 90 }: Props) {
+  const [, , theme] = useTheme();
+  const COLORS = PALETTES[theme];
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -344,7 +373,7 @@ export function CandleChart({ candles, quote, positions = [], height = 340, bars
           const tagH = 17;
           ctx.fillStyle = COLORS.price;
           ctx.fillRect(plotW + 2, py - tagH / 2, AXIS_WIDTH - 4, tagH);
-          ctx.fillStyle = COLORS.tagInk;
+          ctx.fillStyle = COLORS.priceInk;
           ctx.textAlign = 'center';
           ctx.fillText(live.toFixed(2), plotW + AXIS_WIDTH / 2, py);
         }
@@ -363,7 +392,7 @@ export function CandleChart({ candles, quote, positions = [], height = 340, bars
         ctx.setLineDash([]);
 
         const tagH = 17;
-        ctx.fillStyle = '#2e343d';
+        ctx.fillStyle = COLORS.tag;
         ctx.fillRect(plotW + 2, cursor.y - tagH / 2, AXIS_WIDTH - 4, tagH);
         ctx.fillStyle = COLORS.tagInk;
         ctx.textAlign = 'center';
@@ -373,7 +402,7 @@ export function CandleChart({ candles, quote, positions = [], height = 340, bars
           const label = formatClock(cursor.candle.time);
           const w = ctx.measureText(label).width + 14;
           const x = Math.min(plotW - w, Math.max(0, cursor.x - w / 2));
-          ctx.fillStyle = '#2e343d';
+          ctx.fillStyle = COLORS.tag;
           ctx.fillRect(x, plotH + 2, w, TIME_HEIGHT - 4);
           ctx.fillStyle = COLORS.tagInk;
           ctx.fillText(label, x + w / 2, plotH + TIME_HEIGHT / 2);
@@ -385,7 +414,7 @@ export function CandleChart({ candles, quote, positions = [], height = 340, bars
     const observer = new ResizeObserver(draw);
     observer.observe(wrap);
     return () => observer.disconnect();
-  }, [inView, positions, height, live, scale, cursor]);
+  }, [inView, positions, height, live, scale, cursor, COLORS]);
 
   const reading = cursor?.candle ?? inView[inView.length - 1] ?? null;
 
@@ -421,7 +450,7 @@ export function CandleChart({ candles, quote, positions = [], height = 340, bars
         <div className="flex shrink-0 items-center gap-1">
           {!following && (
             <button
-              className="btn btn-ghost px-2 py-0.5 text-[0.625rem] uppercase tracking-wide"
+              className="btn btn-ghost px-2 py-0.5 text-[0.6875rem]"
               onClick={resetView}
             >
               Back to live
@@ -467,16 +496,19 @@ export function CandleChart({ candles, quote, positions = [], height = 340, bars
   );
 }
 
-/** Compact equity/balance line used on the dashboard tiles. */
+/** Compact equity/balance line used on the dashboard tiles. Ice by default, per theme. */
 export function Sparkline({
   points,
   height = 64,
-  color = '#9aa2ad',
+  color: fixed,
 }: {
   points: number[];
   height?: number;
+  /** A #rrggbb colour; the gradient under the line appends an alpha to it. */
   color?: string;
 }) {
+  const [, , theme] = useTheme();
+  const color = fixed ?? (theme === 'light' ? '#1778b3' : '#7cc8f4');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 

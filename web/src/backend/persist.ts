@@ -12,6 +12,9 @@ const KEYS = {
   metaApi: 'sentinal.metaapi.v1',
   strategy: 'sentinal.strategy.v1',
   bot: 'sentinal.bot.v1',
+  ai: 'sentinal.ai.v1',
+  claude: 'sentinal.anthropic.v1',
+  angelSeeded: 'sentinal.library.angel.v1',
 } as const;
 
 function read<T>(key: string): T | null {
@@ -48,38 +51,58 @@ export function saveMetaApiCredentials(value: SavedMetaApi | null): void {
   write(KEYS.metaApi, value);
 }
 
-export interface SavedStrategy {
-  files: StrategyFile[];
-  savedAt: number;
-  /** Whether the uploaded EA is the strategy in use, or kept aside while a built-in model trades. */
-  active: boolean;
-}
-
-export function loadStrategyFiles(): SavedStrategy | null {
-  const saved = read<Partial<SavedStrategy>>(KEYS.strategy);
+/**
+ * The single uploaded EA an earlier version kept, if any, and whether it was
+ * the strategy in use. Taken once into the EA library, then removed.
+ */
+export function takeLegacyStrategy(): { files: StrategyFile[]; active: boolean } | null {
+  const saved = read<{ files?: StrategyFile[]; active?: boolean }>(KEYS.strategy);
+  write(KEYS.strategy, null);
   if (!saved || !Array.isArray(saved.files) || saved.files.length === 0) return null;
-  return { files: saved.files, savedAt: saved.savedAt ?? 0, active: saved.active !== false };
+  return { files: saved.files, active: saved.active !== false };
 }
 
-/** False when the browser would not hold the files (a large .ex5 on a full quota). */
-export function saveStrategyFiles(files: StrategyFile[] | null, active = true): boolean {
-  return write(KEYS.strategy, files ? { files, savedAt: Date.now(), active } : null);
+/** The AI's learned model, so it carries on learning from where it left off. */
+export function loadAiModel(): unknown {
+  return read<unknown>(KEYS.ai);
 }
 
-/** Keeps the uploaded EA but marks whether it is the one trading. */
-export function setStrategyActive(active: boolean): void {
-  const saved = loadStrategyFiles();
-  if (saved) write(KEYS.strategy, { ...saved, active });
+export function saveAiModel(state: unknown): void {
+  write(KEYS.ai, state);
 }
 
-/** Settings worth keeping; what the session decides (symbol, source, arming) is left out. */
-export type SavedBotConfig = Omit<Partial<BotConfig>, 'enabled' | 'symbol' | 'source'>;
+/** The Anthropic API key for Claude's reviews — kept in this browser only, sent only to Anthropic. */
+export function loadClaudeKey(): string | null {
+  const key = read<string>(KEYS.claude);
+  return typeof key === 'string' && key.trim() ? key.trim() : null;
+}
+
+export function saveClaudeKey(key: string | null): void {
+  write(KEYS.claude, key && key.trim() ? key.trim() : null);
+}
+
+/** Whether Angel Bot has been put in this browser's library once already (it is not put back after removal). */
+export function angelSeeded(): boolean {
+  return read<boolean>(KEYS.angelSeeded) === true;
+}
+
+export function markAngelSeeded(): void {
+  write(KEYS.angelSeeded, true);
+}
+
+/** Settings worth keeping; what the session decides (symbol, arming) is left out. */
+export type SavedBotConfig = Omit<Partial<BotConfig>, 'enabled' | 'symbol'> & {
+  /* Settings from before the EA library, read once to move one EA's inputs onto it. */
+  source?: string;
+  expertInputs?: Record<string, string | number | boolean>;
+  expertTimeframe?: number;
+};
 
 export function loadBotConfig(): SavedBotConfig | null {
   return read<SavedBotConfig>(KEYS.bot);
 }
 
 export function saveBotConfig(config: BotConfig): void {
-  const { enabled: _enabled, symbol: _symbol, source: _source, ...rest } = config;
+  const { enabled: _enabled, symbol: _symbol, ...rest } = config;
   write(KEYS.bot, rest);
 }

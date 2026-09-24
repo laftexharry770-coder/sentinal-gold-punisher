@@ -4,6 +4,8 @@
  * definition of a position / account / bot config is used end to end.
  */
 
+import type { AiConfig, AiStatus } from './ai.js';
+
 export type Side = 'buy' | 'sell';
 
 export type BrokerProvider = 'sim' | 'metaapi';
@@ -232,6 +234,8 @@ export type CloseReason =
   | 'copy'
   | 'bot-stop'
   | 'daily-limit'
+  /** The AI closed it: it turned firmly against the trade. */
+  | 'ai-exit'
   /** The broker closed it for lack of margin. */
   | 'stop-out';
 
@@ -293,8 +297,12 @@ export interface BurstConfig {
   takeProfitPrice: number;
   /** Stop loss as a price distance, or null for none. */
   stopLossPrice: number | null;
-  /** 'trend' follows the moving averages; 'buy' and 'sell' fix the direction. */
-  direction: 'trend' | 'buy' | 'sell';
+  /**
+   * 'ai' takes each burst's direction from the AI and holds a burst back when
+   * the AI expects the market to turn; 'trend' follows the moving averages;
+   * 'buy' and 'sell' fix the direction.
+   */
+  direction: 'ai' | 'trend' | 'buy' | 'sell';
   /** Bars the trend is read from, in minutes (1 = M1, 5 = M5…). */
   trendTimeframeMin: number;
   trendFastPeriod: number;
@@ -327,17 +335,18 @@ export interface DispatchConfig {
 export interface BotConfig {
   enabled: boolean;
   symbol: string;
-  source: StrategySource;
-  /** Chart timeframe an uploaded EA runs on, MQL5 code (1 = M1, 16385 = H1 …). */
-  expertTimeframe: number;
-  /** Values for the uploaded EA's inputs, by input name. */
-  expertInputs: Record<string, string | number | boolean>;
   dispatch: DispatchConfig;
   /** Execution style — intrabar fires on tick, close waits for candle close. */
   execution: 'intrabar' | 'bar-close';
-  strategy: 'burst' | 'adaptive-scalp' | 'momentum' | 'mean-reversion';
+  /**
+   * The built-in model that trades alongside any EAs switched on in the
+   * library; 'none' leaves the trading to the EAs alone.
+   */
+  strategy: 'burst' | 'ai' | 'adaptive-scalp' | 'momentum' | 'mean-reversion' | 'none';
   /** Settings of the burst model. */
   burst: BurstConfig;
+  /** Settings of the AI: its own trades, its direction for Burst, its guard over EAs. */
+  ai: AiConfig;
   /**
    * 'fixed' uses lotSize with the money stop/target below. 'risk-percent'
    * sizes every leg from live account equity so the same fraction is risked
@@ -485,6 +494,28 @@ export interface StrategyInfo {
   loadedAt: number | null;
 }
 
+/**
+ * One expert advisor in the library. Any number can be kept, and every one
+ * switched on runs on the master at the same time, each with its own inputs
+ * and chart timeframe.
+ */
+export interface ExpertSlot {
+  id: string;
+  fileName: string;
+  /** 'mql5' runs in the engine; 'ex5' is mirrored from the operator's MetaTrader. */
+  kind: 'mql5' | 'ex5';
+  enabled: boolean;
+  /** Shipped with the terminal (Angel Bot). */
+  bundled: boolean;
+  /** Chart timeframe, MQL5 code (1 = M1, 16385 = H1 …). */
+  timeframe: number;
+  /** Values for the EA's inputs, by name; missing ones take the EA's defaults. */
+  inputs: Record<string, string | number | boolean>;
+  addedAt: number;
+  /** Compile result, status, comment and panel of the EA, as it runs. */
+  info: StrategyInfo;
+}
+
 export interface StrategyInput {
   name: string;
   label: string;
@@ -529,6 +560,8 @@ export interface StateSnapshot {
   strategy: StrategyInfo;
   dispatches: DispatchReport[];
   orders: PendingOrder[];
+  ai: AiStatus;
+  experts: ExpertSlot[];
 }
 
 export interface EquityPoint {
@@ -552,6 +585,8 @@ export type ServerMessage =
   | { type: 'strategy'; payload: StrategyInfo }
   | { type: 'dispatch'; payload: DispatchReport }
   | { type: 'orders'; payload: PendingOrder[] }
+  | { type: 'ai'; payload: AiStatus }
+  | { type: 'experts'; payload: ExpertSlot[] }
   | { type: 'error'; payload: { message: string } };
 
 export interface ManualOrderRequest {

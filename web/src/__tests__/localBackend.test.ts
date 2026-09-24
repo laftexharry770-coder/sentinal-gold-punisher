@@ -25,7 +25,7 @@ vi.mock('../backend/metaapiSdk', async (importOriginal) => ({
 }));
 
 const { createLocalBackend } = await import('../backend/local');
-const { saveStrategyFiles } = await import('../backend/persist');
+const { loadClaudeKey } = await import('../backend/persist');
 const { ANGEL_BOT } = await import('../bundledStrategies');
 
 const sample = readFileSync(fileURLToPath(new URL('../../../mql5/samples/Sentinal.mq5', import.meta.url)), 'utf8');
@@ -45,9 +45,11 @@ function broker() {
 describe('the in-browser backend over MetaApi', () => {
   beforeEach(() => store.clear());
 
-  it('lists the token\'s accounts, connects a master and follower, and restores the saved EA', async () => {
+  it('lists the token\'s accounts, connects a master and follower, and moves an earlier version\'s saved EA into the library', async () => {
     const { masterConn, followerConn } = broker();
-    saveStrategyFiles([{ name: 'Sentinal.mq5', content: sample, encoding: 'text' }]);
+    // What an earlier version kept: one EA in use, its inputs with the settings.
+    store.set('sentinal.strategy.v1', JSON.stringify({ files: [{ name: 'Sentinal.mq5', content: sample, encoding: 'text' }], savedAt: 1, active: true }));
+    store.set('sentinal.bot.v1', JSON.stringify({ source: 'mql5', expertInputs: { InpAutoTrade: true }, expertTimeframe: 5 }));
     const backend = createLocalBackend();
     const messages: ServerMessage[] = [];
     backend.subscribe({ onMessage: (m) => messages.push(m), onStatus: () => undefined });
@@ -80,7 +82,14 @@ describe('the in-browser backend over MetaApi', () => {
 
     const snapshot = messages.find((m) => m.type === 'snapshot');
     if (snapshot?.type !== 'snapshot') throw new Error('no snapshot');
-    expect(snapshot.payload.strategy).toMatchObject({ source: 'mql5', name: 'Sentinal', fileName: 'Sentinal.mq5' });
+    // It is in the library, switched on with its inputs, and trades alone as it did; Angel Bot sits beside it, off.
+    expect(snapshot.payload.experts.map((e) => [e.fileName, e.enabled, e.bundled])).toEqual([
+      ['Sentinal.mq5', true, false],
+      ['Angel_Bot.mq5', false, true],
+    ]);
+    expect(snapshot.payload.experts[0]).toMatchObject({ timeframe: 5, inputs: { InpAutoTrade: true } });
+    expect(snapshot.payload.bot.strategy).toBe('none');
+    expect(store.has('sentinal.strategy.v1')).toBe(false);
     expect(snapshot.payload.bot.symbol).toBe('XAUUSDm');
     expect(snapshot.payload.accounts.map((a) => [a.role, a.symbol, a.provider])).toEqual([
       ['master', 'XAUUSDm', 'metaapi'],
@@ -118,12 +127,27 @@ describe('the in-browser backend over MetaApi', () => {
     expect(backend.sessionState()).toMatchObject({ status: 'locked', error: expect.stringMatching(/no longer on this MetaApi token/) });
   });
 
-  it('keeps an uploaded strategy for the next visit, and switches between it and Burst without a new upload', async () => {
+  it('keeps the whole EA library, and the AI, for the next visit', async () => {
     const backend = createLocalBackend();
     await backend.startDemo();
-    const outcome = await backend.loadStrategy([{ name: 'Sentinal.mq5', content: sample, encoding: 'text' }]);
-    expect(outcome.kind === 'mql5' && outcome.result.ok).toBe(true);
-    await backend.configureExpert({ inputs: { InpAutoTrade: true }, timeframe: 5 });
+    const added = await backend.addExperts(
+      [
+        { name: 'Sentinal.mq5', content: sample, encoding: 'text' },
+        { name: 'Broken.mq5', content: 'void OnTick() { Nope(); }', encoding: 'text' },
+      ],
+      { enabled: false },
+    );
+    expect(added.map((a) => [a.fileName, a.id !== null])).toEqual([
+      ['Sentinal.mq5', true],
+      ['Broken.mq5', false],
+    ]);
+    const id = added[0]!.id!;
+    await backend.configureExpert(id, { inputs: { InpAutoTrade: true }, timeframe: 5 });
+    await backend.setExpertEnabled(id, true);
+    await backend.useBuiltinStrategy('ai');
+    await backend.setClaudeKey('sk-ant-test-key');
+    expect(backend.claudeKey()).toEqual({ where: 'browser', configured: true });
+    await backend.signOut();
 
     const again = createLocalBackend();
     const messages: ServerMessage[] = [];
@@ -131,29 +155,32 @@ describe('the in-browser backend over MetaApi', () => {
     await again.startDemo();
     const snapshot = [...messages].reverse().find((m) => m.type === 'snapshot');
     if (snapshot?.type !== 'snapshot') throw new Error('no snapshot');
-    expect(snapshot.payload.strategy.source).toBe('mql5');
-    expect(snapshot.payload.bot).toMatchObject({ expertTimeframe: 5, expertInputs: { InpAutoTrade: true } });
+    expect(snapshot.payload.experts.map((e) => [e.fileName, e.enabled])).toEqual([
+      ['Angel_Bot.mq5', false],
+      ['Sentinal.mq5', true],
+    ]);
+    expect(snapshot.payload.experts.find((e) => e.fileName === 'Sentinal.mq5')).toMatchObject({ timeframe: 5, inputs: { InpAutoTrade: true } });
+    expect(snapshot.payload.bot.strategy).toBe('ai');
+    expect(snapshot.payload.ai.claude.configured).toBe(true);
+    expect(snapshot.payload.ai.reading?.learning.samples).toBeGreaterThan(0);
 
-    await again.useBuiltinStrategy('burst');
-    // Switching to Burst keeps the EA, ready to switch back to without an upload.
-    expect(await again.savedStrategy()).toMatchObject({ fileName: 'Sentinal.mq5', kind: 'mql5', active: false });
-    const back = await again.useSavedStrategy();
-    expect(back.kind === 'mql5' && back.result.ok).toBe(true);
-    expect(await again.savedStrategy()).toMatchObject({ active: true });
-    await again.useBuiltinStrategy('burst');
+    // Angel Bot is put in the library once; removed, it stays removed.
+    const angel = snapshot.payload.experts.find((e) => e.fileName === 'Angel_Bot.mq5')!;
+    await again.removeExpert(angel.id);
+    await again.setClaudeKey(null);
+    expect(loadClaudeKey()).toBeNull();
+    await again.signOut();
     const third = createLocalBackend();
     const later: ServerMessage[] = [];
     third.subscribe({ onMessage: (m) => later.push(m), onStatus: () => undefined });
     await third.startDemo();
     const last = [...later].reverse().find((m) => m.type === 'snapshot');
     if (last?.type !== 'snapshot') throw new Error('no snapshot');
-    expect(last.payload.strategy.source).toBe('builtin');
-    expect(last.payload.strategy.name).toBe('Burst');
-    expect(await third.savedStrategy()).toMatchObject({ fileName: 'Sentinal.mq5', active: false });
-    await third.forgetSavedStrategy();
-    expect(await third.savedStrategy()).toBeNull();
-    await backend.signOut();
-    await again.signOut();
+    expect(last.payload.experts.map((e) => e.fileName)).toEqual(['Sentinal.mq5']);
+    await third.useBuiltinStrategy('none');
+    await third.startBot();
+    await settle(50);
+    expect(third.sessionState().status).toBe('demo');
     await third.signOut();
   });
 
@@ -169,9 +196,13 @@ describe('the in-browser backend over MetaApi', () => {
       liveExecution: true,
       followerMultiplier: 1,
     });
-    const outcome = await backend.loadStrategy([ANGEL_BOT]);
-    expect(outcome.kind === 'mql5' && outcome.result.ok).toBe(true);
-    await backend.configureExpert({ inputs: { InpLots: 0.01 } });
+    await backend.useBuiltinStrategy('none');
+    const [added] = await backend.addExperts([ANGEL_BOT], { enabled: false });
+    const angelId = added!.id ?? (await (async () => {
+      throw new Error('Angel Bot did not compile');
+    })());
+    await backend.configureExpert(angelId, { inputs: { InpLots: 0.01 } });
+    await backend.setExpertEnabled(angelId, true);
     await backend.startBot();
 
     const stops = (conn: typeof masterConn) =>

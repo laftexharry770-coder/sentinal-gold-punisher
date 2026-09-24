@@ -26,6 +26,10 @@ const escapeScript = (code) => code.replace(/<\/script/gi, '<\\/script').replace
 
 async function main() {
   let html = await readFile(htmlPath, 'utf8');
+  // Every script element in Vite's output — the bundle's tag and any inline
+  // script of the page's own, like the theme set before first paint — closes
+  // exactly once. Inlining must not change that count.
+  const scriptsBefore = (html.match(/<\/script>/gi) ?? []).length;
   const assetDir = path.join(dist, 'assets');
   const assets = await readdir(assetDir).catch(() => []);
 
@@ -65,13 +69,13 @@ async function main() {
   const leftover = markupOnly.match(/(?:src|href)="[^"]*assets\/[^"]*"/g);
   if (leftover) throw new Error(`asset references remain in the page: ${leftover.join(', ')}`);
 
-  // Exactly one closing tag per inlined script: an unescaped `</script` inside
-  // the bundle would truncate the element and dump the rest of the code into
-  // the page as text. (A bare `<script` inside the code is harmless — only
+  // Exactly one closing tag per script: an unescaped `</script` inside the
+  // bundle would truncate the element and dump the rest of the code into the
+  // page as text. (A bare `<script` inside the code is harmless — only
   // `</script` and `<!--` can end the element.)
   const closes = (html.match(/<\/script>/gi) ?? []).length;
-  if (closes !== inlinedJs) {
-    throw new Error(`expected ${inlinedJs} inline script(s), found ${closes} closing tag(s)`);
+  if (closes !== scriptsBefore) {
+    throw new Error(`expected ${scriptsBefore} script(s), found ${closes} closing tag(s)`);
   }
 
   await writeFile(htmlPath, html);

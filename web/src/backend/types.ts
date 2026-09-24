@@ -1,6 +1,7 @@
-import type { LoadStrategyResult, MetaApiAccountSummary, ProvisionInput, StrategyFile } from '@sentinal/engine';
+import type { AddedExpert, LoadStrategyResult, MetaApiAccountSummary, ProvisionInput, StrategyFile } from '@sentinal/engine';
 import type {
   AccountState,
+  AiReview,
   BotConfig,
   BotStats,
   ClosedTrade,
@@ -10,7 +11,7 @@ import type {
 } from '@sentinal/shared';
 import type { ConnectInput, SavedMetaApi, SessionState } from './session';
 
-export type { MetaApiAccountSummary, ProvisionInput, StrategyFile };
+export type { AddedExpert, MetaApiAccountSummary, ProvisionInput, StrategyFile };
 
 export interface NewAccountPayload {
   name: string;
@@ -50,13 +51,10 @@ export interface Subscription {
 /** A compile or load outcome the Strategy card can show as it is. */
 export type StrategyLoadOutcome = LoadStrategyResult;
 
-/** The EA last uploaded, kept so it can be switched back to without uploading again. */
-export interface SavedStrategyInfo {
-  fileName: string;
-  kind: 'mql5' | 'ex5';
-  /** True while it is the strategy in use. */
-  active: boolean;
-  savedAt: number;
+/** Where Claude's API key lives: this browser, or the execution server's environment. */
+export interface ClaudeKeyState {
+  where: 'browser' | 'server';
+  configured: boolean;
 }
 
 /**
@@ -101,20 +99,28 @@ export interface TerminalBackend {
     closed: number;
   }>;
 
-  /* --- strategy --- */
+  /* --- strategy: the built-in model, and the EA library beside it --- */
   saveBotConfig(patch: Partial<BotConfig>): Promise<BotView>;
   startBot(): Promise<BotView>;
   stopBot(closePositions?: boolean): Promise<BotView>;
-  /** Makes uploaded .mq5 (+ .mqh) or .ex5 files the strategy. */
-  loadStrategy(files: StrategyFile[]): Promise<StrategyLoadOutcome>;
-  /** Back to a built-in model; the uploaded EA stays saved. */
-  useBuiltinStrategy(strategy?: BotConfig['strategy']): Promise<BotView>;
-  /** The uploaded EA kept for switching back to, if any. */
-  savedStrategy(): Promise<SavedStrategyInfo | null>;
-  /** Makes the saved EA the strategy again. */
-  useSavedStrategy(): Promise<StrategyLoadOutcome>;
-  /** Forgets the saved EA (a built-in model keeps trading). */
-  forgetSavedStrategy(): Promise<void>;
-  /** New EA inputs or chart timeframe; a running EA restarts with them. */
-  configureExpert(patch: { inputs?: Record<string, string | number | boolean>; timeframe?: number }): Promise<BotView>;
+  /** The built-in model that trades beside the EAs switched on; 'none' leaves it to the EAs. */
+  useBuiltinStrategy(strategy: BotConfig['strategy']): Promise<BotView>;
+  /** Adds .mq5 (+ .mqh) and .ex5 files to the library — several at once, switched on unless told otherwise. */
+  addExperts(files: StrategyFile[], options?: { enabled?: boolean }): Promise<AddedExpert[]>;
+  /** Switches an EA on or off; with the bot running it starts or stops at once. */
+  setExpertEnabled(id: string, enabled: boolean): Promise<void>;
+  /** New inputs or chart timeframe for one EA; a running one restarts with them. */
+  configureExpert(id: string, patch: { inputs?: Record<string, string | number | boolean>; timeframe?: number }): Promise<void>;
+  removeExpert(id: string): Promise<void>;
+
+  /* --- the AI and Claude's reviews of it --- */
+  /** Asks Claude to review the AI now; null when it cannot (no key, one already running). */
+  reviewAi(): Promise<AiReview | null>;
+  approveAiSuggestion(): Promise<void>;
+  dismissAiSuggestion(): Promise<void>;
+  /** Lifts a pause Claude set on the AI's entries. */
+  resumeAi(): Promise<void>;
+  claudeKey(): ClaudeKeyState;
+  /** Keeps (or with null forgets) the Anthropic API key; only the browser build can. */
+  setClaudeKey(key: string | null): Promise<void>;
 }

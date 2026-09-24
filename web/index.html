@@ -1,9 +1,18 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#070B14" />
+    <meta name="theme-color" content="#0a0d12" />
+    <!-- The theme is set before anything paints, so a light page never flashes dark or the other way round. -->
+    <script>
+      try {
+        var pref = JSON.parse(localStorage.getItem('sentinal.theme.v1') || '"system"');
+        var light = pref === 'light' || (pref !== 'dark' && matchMedia('(prefers-color-scheme: light)').matches);
+        document.documentElement.dataset.theme = light ? 'light' : 'dark';
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', light ? '#f2f4f8' : '#0a0d12');
+      } catch (e) {}
+    </script>
     <meta name="description" content="Sentinal MT5 — XAUUSD trading terminal for MetaTrader through MetaApi: run your own MQL5 expert advisor, copy a master account to followers in the same instant, multi-position execution and zero-loss recovery." />
 
     <!-- Canonical home of the app, so shares and search resolve to one address. -->

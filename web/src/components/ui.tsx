@@ -20,15 +20,15 @@ export function Card({
     <section className={`card flex min-h-0 flex-col ${className}`}>
       {/* Header actions wrap under the title when the row runs out of room. */}
       {(title || actions) && (
-        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-line)] px-4 py-3">
+        <header className="flex flex-wrap items-start justify-between gap-3 px-5 pb-1 pt-4">
           <div className="min-w-0 flex-1 basis-40">
-            {title && <h2 className="truncate text-[0.8125rem] font-semibold tracking-wide text-ink">{title}</h2>}
-            {subtitle && <p className="mt-0.5 truncate text-xs text-[var(--color-ink-muted)]">{subtitle}</p>}
+            {title && <h2 className="truncate text-[0.9375rem] font-semibold tracking-[-0.01em] text-ink">{title}</h2>}
+            {subtitle && <p className="mt-0.5 truncate text-[0.78125rem] text-[var(--color-ink-muted)]">{subtitle}</p>}
           </div>
           {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </header>
       )}
-      <div className={`min-h-0 flex-1 ${bodyClass || 'p-4'}`}>{children}</div>
+      <div className={`min-h-0 flex-1 ${bodyClass || (title || actions ? 'px-5 pb-5 pt-3' : 'p-5')}`}>{children}</div>
     </section>
   );
 }
@@ -42,11 +42,11 @@ export function Chip({
 }) {
   const tones: Record<string, string> = {
     neutral: 'border-[var(--color-line)] bg-[var(--color-surface-2)] text-[var(--color-ink-dim)]',
-    accent: 'border-accent/40 bg-accent/12 text-[var(--color-accent-bright)]',
-    profit: 'border-profit/40 bg-profit/12 text-profit',
-    loss: 'border-loss/40 bg-loss/12 text-loss',
-    gold: 'border-gold/40 bg-gold/12 text-gold',
-    warn: 'border-warn/40 bg-warn/12 text-warn',
+    accent: 'border-accent/30 bg-accent/10 text-[var(--color-ice)]',
+    profit: 'border-profit/30 bg-profit/10 text-profit',
+    loss: 'border-loss/30 bg-loss/10 text-loss',
+    gold: 'border-gold/30 bg-gold/10 text-gold',
+    warn: 'border-warn/30 bg-warn/10 text-warn',
   };
   return <span className={`chip ${tones[tone]}`}>{children}</span>;
 }
@@ -68,18 +68,18 @@ export function StatTile({
     neutral: 'text-ink',
     profit: 'text-profit',
     loss: 'text-loss',
-    accent: 'text-[var(--color-accent-bright)]',
+    accent: 'text-[var(--color-ice)]',
     gold: 'text-gold',
   };
   return (
     <div className="card-flush px-3.5 py-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-[var(--color-ink-muted)]">
+        <span className="text-[0.75rem] font-medium text-[var(--color-ink-muted)]">
           {label}
         </span>
         {icon}
       </div>
-      <div className={`tabular mt-1.5 text-[1.35rem] font-semibold leading-none ${colors[tone]}`}>{value}</div>
+      <div className={`tabular mt-2 text-[1.375rem] font-semibold leading-none tracking-[-0.02em] ${colors[tone]}`}>{value}</div>
       {sub && <div className="mt-1.5 text-xs text-[var(--color-ink-muted)]">{sub}</div>}
     </div>
   );
@@ -106,8 +106,8 @@ export function Toggle({
 }) {
   return (
     <label
-      className={`flex items-start justify-between gap-4 rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 ${
-        disabled ? 'opacity-50' : 'cursor-pointer hover:border-[#39404a]'
+      className={`flex items-start justify-between gap-4 rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-3 ${
+        disabled ? 'opacity-50' : 'cursor-pointer hover:border-[var(--color-line-strong)]'
       }`}
     >
       <span className="min-w-0">
@@ -122,15 +122,45 @@ export function Toggle({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors ${
-          checked ? 'border-accent bg-accent/80' : 'border-[var(--color-line)] bg-[#20252c]'
+          checked ? 'border-transparent bg-[var(--color-ice)]' : 'border-[var(--color-line-strong)] bg-[var(--color-surface-3)]'
         }`}
       >
         <span
-          className="absolute rounded-full bg-white transition-all"
+          className="absolute rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.3)] transition-all"
           style={{ height: 18, width: 18, left: checked ? 22 : 2, top: 2 }}
         />
       </button>
     </label>
+  );
+}
+
+/** The bare on/off switch of Toggle, for rows that carry their own label. */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  /** Read by assistive tech; the row shows its own. */
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors disabled:opacity-50 ${
+        checked ? 'border-transparent bg-[var(--color-ice)]' : 'border-[var(--color-line-strong)] bg-[var(--color-surface-3)]'
+      }`}
+    >
+      <span className="absolute rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.3)] transition-all" style={{ height: 18, width: 18, left: checked ? 22 : 2, top: 2 }} />
+    </button>
   );
 }
 
@@ -246,7 +276,7 @@ export function TextField({
           <div className="absolute inset-y-0 right-1.5 flex items-center gap-1">
             <button
               type="button"
-              className="btn btn-ghost px-2 py-1 text-[0.625rem] uppercase tracking-wide"
+              className="btn btn-ghost px-2 py-1 text-[0.6875rem]"
               aria-pressed={revealed}
               onClick={() => setRevealed((prev) => !prev)}
             >
@@ -254,7 +284,7 @@ export function TextField({
             </button>
             <button
               type="button"
-              className="btn btn-ghost px-2 py-1 text-[0.625rem] uppercase tracking-wide"
+              className="btn btn-ghost px-2 py-1 text-[0.6875rem]"
               aria-label={`Clear ${label}`}
               onClick={() => {
                 setRevealed(false);
@@ -295,16 +325,15 @@ export function Segmented<T extends string>({
   return (
     <div>
       {label && <span className="label">{label}</span>}
-      <div className="flex rounded-xl border border-[var(--color-line)] bg-[#0e1116] p-1">
+      <div className="flex rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] p-1">
         {options.map((option) => (
           <button
             key={option.value}
             type="button"
+            aria-pressed={option.value === value}
             onClick={() => onChange(option.value)}
             className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors ${
-              option.value === value
-                ? 'bg-accent text-white shadow-[0_8px_20px_-12px_rgba(0,0,0,0.85)]'
-                : 'text-[var(--color-ink-muted)] hover:text-ink'
+              option.value === value ? 'segment-on' : 'text-[var(--color-ink-muted)] hover:text-ink'
             }`}
           >
             {option.label}

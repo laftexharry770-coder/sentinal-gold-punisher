@@ -5,7 +5,8 @@ import { registerSymbolSpec, XAUUSD, type AccountConfig, type DispatchReport, ty
 import { TradingAccount, type OpenRequest, type OpenResult } from '../broker/account.js';
 import { AccountManager } from '../broker/manager.js';
 import { baseSymbol, CopyTradeEngine } from '../engine/copier.js';
-import { loadStrategy, placeOrder, startBot, stopBot, updateBotConfig } from '../commands.js';
+import { placeOrder, startBot, stopBot, updateBotConfig } from '../commands.js';
+import { eaInfo, loadEa } from './eaHelpers.js';
 import { Journal } from '../journal.js';
 import { createRuntime } from '../runtime.js';
 
@@ -175,20 +176,20 @@ describe('an uploaded expert as the strategy', () => {
       copy: { enabled: true, masterId: master.id, sizing: 'multiplier', multiplier: 1, maxSlippage: 0 },
     });
 
-    const loaded = await loadStrategy(runtime, [{ name: 'Sentinal.mq5', content: source }]);
+    const loaded = (
+      await loadEa(runtime, [{ name: 'Sentinal.mq5', content: source }], {
+        inputs: { InpAutoTrade: true, InpNewYorkOnly: false, InpVerboseLog: false, InpMaxSpreadPoints: 0, InpMaxSpreadATR: 0, InpShowPanel: true },
+      })
+    ).outcome;
     expect(loaded.kind).toBe('mql5');
-    expect(runtime.bot.config.source).toBe('mql5');
-    expect(runtime.strategyInfo().inputs).toHaveLength(55);
+    expect(runtime.experts.list()).toHaveLength(1);
+    expect(eaInfo(runtime).inputs).toHaveLength(55);
 
-    updateBotConfig(runtime, {
-      expertTimeframe: 1,
-      expertInputs: { InpAutoTrade: true, InpNewYorkOnly: false, InpVerboseLog: false, InpMaxSpreadPoints: 0, InpMaxSpreadATR: 0, InpShowPanel: true },
-      maxDailyLossUsd: null,
-    });
+    updateBotConfig(runtime, { maxDailyLossUsd: null });
     startBot(runtime);
     // Let the expert load its history and run OnInit, as it would before the first live tick.
-    for (let i = 0; i < 50 && runtime.strategyInfo().status !== 'running'; i += 1) await settle(5);
-    expect(runtime.strategyInfo().status).toBe('running');
+    for (let i = 0; i < 50 && eaInfo(runtime).status !== 'running'; i += 1) await settle(5);
+    expect(eaInfo(runtime).status).toBe('running');
 
     // Drive the feed by hand, letting the EA finish each tick as a live terminal would.
     const feed = runtime.feed;
@@ -200,12 +201,12 @@ describe('an uploaded expert as the strategy', () => {
       price += (seed / 4294967296 - 0.5) * 0.9;
       time += 5000;
       feed.pushTick({ symbol: 'XAUUSD', bid: +price.toFixed(2), ask: +(price + 0.2).toFixed(2), time });
-      await runtime.expert.idle();
+      await runtime.experts.idle();
     }
     await settle(20);
-    expect(runtime.strategyInfo().ticks).toBe(3000);
+    expect(eaInfo(runtime).ticks).toBe(3000);
 
-    const info = runtime.strategyInfo();
+    const info = eaInfo(runtime);
     expect(info.status).toBe('running');
     expect(info.panel.some((line) => line.startsWith('Sentinal:'))).toBe(true);
     const eaTrades = master.history.filter((t) => t.origin === 'bot').length + master.listPositions().filter((p) => p.origin === 'bot').length;
@@ -216,14 +217,15 @@ describe('an uploaded expert as the strategy', () => {
 
     stopBot(runtime);
     await settle(20);
-    expect(runtime.strategyInfo().status).toBe('stopped');
+    expect(eaInfo(runtime).status).toBe('stopped');
   });
 
   it('refuses an EA that does not compile, and says where', async () => {
     const runtime = createRuntime({ seedPrice: 3300, tickIntervalMs: 50, seed: 1, historyBars: 50 });
-    const loaded = await loadStrategy(runtime, [{ name: 'Broken.mq5', content: 'void OnTick() {\n  Undeclared();\n}' }]);
-    expect(loaded.kind === 'mql5' && !loaded.result.ok).toBe(true);
-    expect(runtime.bot.config.source).toBe('builtin');
+    const added = await loadEa(runtime, [{ name: 'Broken.mq5', content: 'void OnTick() {\n  Undeclared();\n}' }]);
+    expect(added.id).toBeNull();
+    expect(added.outcome.kind === 'mql5' && !added.outcome.result.ok).toBe(true);
+    expect(runtime.experts.list()).toHaveLength(0);
     expect(runtime.journal.list()[0]?.message).toMatch(/line 2/);
   });
 
@@ -232,11 +234,11 @@ describe('an uploaded expert as the strategy', () => {
     const bytes = new Uint8Array(4096).map((_, i) => (i * 37) % 256);
     let binary = '';
     for (const b of bytes) binary += String.fromCharCode(b);
-    const loaded = await loadStrategy(runtime, [{ name: 'Angel_Bot.ex5', content: btoa(binary), encoding: 'base64' }]);
+    const loaded = (await loadEa(runtime, [{ name: 'Angel_Bot.ex5', content: btoa(binary), encoding: 'base64' }])).outcome;
     expect(loaded.kind).toBe('ex5');
-    expect(runtime.bot.config.source).toBe('mirror');
-    expect(runtime.strategyInfo()).toMatchObject({ source: 'mirror', name: 'Angel_Bot' });
-    expect(runtime.strategyInfo().fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(runtime.experts.list()[0]).toMatchObject({ kind: 'ex5', enabled: true });
+    expect(eaInfo(runtime)).toMatchObject({ source: 'mirror', name: 'Angel_Bot' });
+    expect(eaInfo(runtime).fingerprint).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it('keeps the manual ticket working through the dispatcher', async () => {

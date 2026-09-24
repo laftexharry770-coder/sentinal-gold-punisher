@@ -123,6 +123,34 @@ export class ExpertRunner extends Emitter {
   private stopUnsub: (() => void) | null = null;
   /** Set by the bot: false blocks the EA's orders as AutoTrading-off would. */
   tradingAllowed = true;
+  /**
+   * The AI's guard over new entries: a reason to refuse one, or null to let
+   * it through. Exits, stop changes and cancels are never asked.
+   */
+  entryGuard: ((side: 'buy' | 'sell', kind: 'market' | 'pending') => string | null) | null = null;
+  private guardNotedAt = 0;
+  /** Tickets of pending orders this EA placed, so their fills are known to be its own. */
+  private readonly placed = new Set<number>();
+
+  /** True (once) when a new position is the fill of one of this EA's pending orders. */
+  claims(position: Position): boolean {
+    if (!this.placed.has(position.ticket)) return false;
+    this.placed.delete(position.ticket);
+    return true;
+  }
+
+  /** The guard's answer, journalled at most every 30 s so a vetoed EA does not flood the log. */
+  private vetoed(side: 'buy' | 'sell', kind: 'market' | 'pending', accountId: string): string | null {
+    const reason = this.entryGuard?.(side, kind) ?? null;
+    if (reason) {
+      const now = Date.now();
+      if (now - this.guardNotedAt > 30_000) {
+        this.guardNotedAt = now;
+        this.journal.write('warn', accountId, `AI guard refused ${this.info().name}'s ${side.toUpperCase()} ${kind === 'pending' ? 'order' : 'entry'} — ${reason}`);
+      }
+    }
+    return reason;
+  }
 
   constructor(
     private readonly journal: Journal,
@@ -540,6 +568,8 @@ export class ExpertRunner extends Emitter {
               return done({ deal: trade.ticket, order: trade.ticket, volume: trade.volume, price: trade.closePrice });
             }
             if (req.type !== 0 && req.type !== 1) return failure(RETCODE.INVALID, 'a market order must be a buy or a sell');
+            const veto = runner.vetoed(req.type === 0 ? 'buy' : 'sell', 'market', master.id);
+            if (veto) return failure(RETCODE.REJECT, `AI guard: ${veto}`);
             const open: OpenRequest = {
               symbol: req.symbol || master.symbol,
               side: req.type === 0 ? 'buy' : 'sell',
@@ -553,6 +583,7 @@ export class ExpertRunner extends Emitter {
             };
             const result = dispatcher ? await dispatcher.open(master, open) : await master.submit(open);
             if (!result.ok) return failure(retcodeFor(result.error, result.code), result.error);
+            runner.emit('opened', result.position);
             return done({ deal: result.position.ticket, order: result.position.ticket, volume: result.position.volume, price: result.position.openPrice });
           }
           case TRADE_ACTION.SLTP: {
@@ -567,6 +598,8 @@ export class ExpertRunner extends Emitter {
           case TRADE_ACTION.PENDING: {
             const type = PENDING_TYPES[req.type];
             if (!type) return failure(RETCODE.INVALID, 'invalid pending order type');
+            const vetoPending = runner.vetoed(type.startsWith('buy') ? 'buy' : 'sell', 'pending', master.id);
+            if (vetoPending) return failure(RETCODE.REJECT, `AI guard: ${vetoPending}`);
             const pending: PendingRequest = {
               symbol: req.symbol || master.symbol,
               type,
@@ -582,6 +615,8 @@ export class ExpertRunner extends Emitter {
             // Mirrored onto every follower, so each broker fills its own copy at this price.
             const result = dispatcher ? await dispatcher.placePending(master, pending) : await master.submitPending(pending);
             if (!result.ok) return failure(retcodeFor(result.error), result.error);
+            runner.placed.add(result.order.ticket);
+            if (runner.placed.size > 500) runner.placed.delete(runner.placed.values().next().value!);
             return done({ order: result.order.ticket, volume: result.order.volume, price: result.order.openPrice });
           }
           case TRADE_ACTION.MODIFY: {
