@@ -16,7 +16,7 @@ function ClaudeKey() {
 
   if (state.where === 'server') {
     return (
-      <p className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
+      <p className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
         {configured
           ? 'The execution server has an Anthropic API key (ANTHROPIC_API_KEY): Claude can review the AI.'
           : 'Set ANTHROPIC_API_KEY in the execution server’s environment to let Claude review the AI.'}
@@ -65,8 +65,8 @@ function ClaudeKey() {
 
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
-    <fieldset className="rounded-xl border border-[var(--color-line)] bg-[#0e1116]/70 p-3.5">
-      <legend className="px-1.5 text-[0.6875rem] font-bold uppercase tracking-[0.08em] text-[var(--color-flame)]">{title}</legend>
+    <fieldset className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] p-3.5">
+      <legend className="px-1.5 text-[0.8125rem] font-semibold text-ink">{title}</legend>
       {note && <p className="mb-3 text-[0.6875rem] leading-snug text-[var(--color-ink-muted)]">{note}</p>}
       {children}
     </fieldset>
@@ -116,9 +116,9 @@ export function AiCard({
           </button>
         </div>
       }
-      bodyClass="p-4 space-y-4"
+      bodyClass="px-5 pb-5 pt-3 space-y-4"
     >
-      <p className="rounded-xl border border-[var(--color-flame)]/30 bg-[var(--color-flame)]/[0.06] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
+      <p className="rounded-xl border border-[var(--color-ice)]/30 bg-[var(--color-ice)]/[0.06] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
         The AI reads every quote and one-minute bar, classifies the market, and weighs eight experts by how often each has been right in
         that kind of market, learning from every bar and every trade it closes. It turns their vote into a calibrated probability and trades
         only above the bar you set — which it raises by itself after losses and in markets where it keeps losing. It cannot see the future:
@@ -160,7 +160,7 @@ export function AiCard({
           <Toggle label="Close when it turns against a trade" hint="If it gives the other side a firm probability before the trade is safely in profit." checked={draft.exitOnFlip} onChange={(v) => set('exitOnFlip', v)} />
           <Toggle label="Trade volatile markets" hint="Off: it stays out while volatility is far above normal." checked={draft.tradeVolatile} onChange={(v) => set('tradeVolatile', v)} />
         </div>
-        <p className="mt-3 rounded-xl border border-[var(--color-line)] bg-black/25 px-3.5 py-2.5 text-xs leading-relaxed text-[var(--color-ink-dim)]">
+        <p className="mt-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-2.5 text-xs leading-relaxed text-[var(--color-ink-dim)]">
           {sized && stop && atr ? (
             <>
               Now (ATR {atr.toFixed(2)}, {formatMoney(equity)} equity) a trade would be{' '}

@@ -135,7 +135,8 @@ function AccountCard({ account, masters }: { account: AccountState; masters: Acc
   return (
     <div className="card p-4">
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
-        <div className="min-w-0">
+        {/* max-w-full: in a column the details size to their text, and truncate needs a bound. */}
+        <div className="min-w-0 max-w-full">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-sm font-semibold text-ink">{account.name}</h3>
             <Chip tone={account.connected ? 'profit' : 'loss'}>{account.connected ? 'connected' : 'offline'}</Chip>
@@ -170,19 +171,19 @@ function AccountCard({ account, masters }: { account: AccountState; masters: Acc
 
       <dl className="tabular mt-3 grid grid-cols-2 gap-3 border-t border-[var(--color-line)] pt-3 text-xs sm:grid-cols-4">
         <div>
-          <dt className="text-[0.625rem] uppercase text-[var(--color-ink-muted)]">Balance</dt>
+          <dt className="text-[0.6875rem] text-[var(--color-ink-muted)]">Balance</dt>
           <dd className="font-medium">{formatMoney(account.balance)}</dd>
         </div>
         <div>
-          <dt className="text-[0.625rem] uppercase text-[var(--color-ink-muted)]">Equity</dt>
+          <dt className="text-[0.6875rem] text-[var(--color-ink-muted)]">Equity</dt>
           <dd className="font-medium">{formatMoney(account.equity)}</dd>
         </div>
         <div>
-          <dt className="text-[0.625rem] uppercase text-[var(--color-ink-muted)]">Free margin</dt>
+          <dt className="text-[0.6875rem] text-[var(--color-ink-muted)]">Free margin</dt>
           <dd className="font-medium">{formatMoney(account.freeMargin)}</dd>
         </div>
         <div>
-          <dt className="text-[0.625rem] uppercase text-[var(--color-ink-muted)]">Open legs</dt>
+          <dt className="text-[0.6875rem] text-[var(--color-ink-muted)]">Open legs</dt>
           <dd className="font-medium">{account.openPositions}</dd>
         </div>
       </dl>
@@ -251,7 +252,7 @@ function MetaApiFollowers() {
   };
 
   return (
-    <Card title="Add a follower" subtitle="Another MetaTrader account on your MetaApi token" bodyClass="p-4 space-y-3">
+    <Card title="Add a follower" subtitle="Another MetaTrader account on your MetaApi token" bodyClass="px-5 pb-5 pt-3 space-y-3">
       <NumberField label="Lot multiplier" value={multiplier} onChange={setMultiplier} step={0.1} min={0.01} suffix="×" hint="A copy trades the master's lot times this; change it later under Copy routing." />
       {list === null && !error && <p className="text-xs text-[var(--color-ink-muted)]">Reading your MetaApi accounts…</p>}
       {list !== null && available.length === 0 && (
@@ -261,7 +262,7 @@ function MetaApiFollowers() {
       )}
       <ul className="space-y-2">
         {available.map((account) => (
-          <li key={account.id} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-2.5">
+          <li key={account.id} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-2.5">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-ink">{account.name}</p>
               <p className="tabular truncate text-[0.6875rem] text-[var(--color-ink-muted)]">
@@ -385,7 +386,7 @@ export function ConnectBroker({ session }: { session: SessionState }) {
 
         <DispatchLog reports={dispatches} accounts={accounts} />
 
-        <Card title="How copying works" bodyClass="p-4 text-xs leading-relaxed text-[var(--color-ink-dim)] space-y-2">
+        <Card title="How copying works" bodyClass="px-5 pb-5 pt-3 text-xs leading-relaxed text-[var(--color-ink-dim)] space-y-2">
           <p>
             The strategy trades the <span className="font-semibold text-ink">master</span>. Each order it sends goes to the master and to
             every follower in the same instant — followers never wait to hear that the master filled. Each copy uses the follower's
@@ -405,7 +406,7 @@ export function ConnectBroker({ session }: { session: SessionState }) {
       {live ? (
         <MetaApiFollowers />
       ) : (
-      <Card title="Add a follower" subtitle="Simulated mirror account" bodyClass="p-4 space-y-3">
+      <Card title="Add a follower" subtitle="Simulated mirror account" bodyClass="px-5 pb-5 pt-3 space-y-3">
         <TextField
           label="Display name"
           value={form.name}
@@ -456,7 +457,7 @@ export function ConnectBroker({ session }: { session: SessionState }) {
         />
 
         {form.role === 'slave' && (
-          <div className="space-y-3 rounded-xl border border-[var(--color-line)] bg-[#0e1116] p-3">
+          <div className="space-y-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] p-3">
             <div>
               <label className="label">Follow master</label>
               <select className="field" value={copyMasterId} onChange={(e) => setCopyMasterId(e.target.value)}>

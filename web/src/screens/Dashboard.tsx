@@ -54,7 +54,7 @@ function QuickTrade() {
       title="Quick trade"
       subtitle="Multi-leg market execution"
       actions={<Chip tone="accent">{legs} legs</Chip>}
-      bodyClass="p-4 space-y-3"
+      bodyClass="px-5 pb-5 pt-3 space-y-3"
     >
       <div>
         <label className="label">Account</label>

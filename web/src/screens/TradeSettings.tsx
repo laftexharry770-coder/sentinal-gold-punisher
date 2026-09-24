@@ -3,6 +3,7 @@ import { burstSize, formatMoney, getSymbolSpec, riskSizedLeg, type BotConfig } f
 import { api } from '../api';
 import { AiCard } from '../components/AiSettings';
 import { StrategyCard } from '../components/StrategyPanel';
+import { ThemeSwitch } from '../components/ThemeToggle';
 import { toast } from '../components/Toast';
 import { Card, Chip, NumberField, Segmented, Toggle } from '../components/ui';
 import { useTerminal } from '../store';
@@ -22,14 +23,14 @@ function SizingPreview({ draft, equity }: { draft: Draft; equity: number }) {
 
   if (equity <= 0) {
     return (
-      <p className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 text-xs text-[var(--color-ink-muted)]">
+      <p className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-3 text-xs text-[var(--color-ink-muted)]">
         Connect a broker to see the size these settings produce for your account.
       </p>
     );
   }
 
   return (
-    <div className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 text-xs text-[var(--color-ink-dim)]">
+    <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-3 text-xs text-[var(--color-ink-dim)]">
       On {formatMoney(equity)} of equity each leg is{' '}
       <span className="tabular font-semibold text-ink">{sized.volume.toFixed(2)} lots</span>, risking{' '}
       <span className="tabular font-semibold text-loss">{formatMoney(sized.stopLossUsd)}</span> against{' '}
@@ -71,7 +72,7 @@ function DispatchCard() {
       title="Copy dispatch"
       subtitle="How each order reaches the master and its followers"
       actions={<Chip tone={config.dispatch.mode === 'simultaneous' ? 'profit' : 'neutral'}>{config.dispatch.mode}</Chip>}
-      bodyClass="p-4 space-y-4"
+      bodyClass="px-5 pb-5 pt-3 space-y-4"
     >
       <Segmented
         label="Dispatch"
@@ -90,12 +91,12 @@ function DispatchCard() {
         onChange={(cancelOrphans) => void save({ cancelOrphans })}
       />
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3">
+        <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-3">
           <p className="label">Send gap, master → last follower</p>
           <p className="tabular text-lg font-semibold text-ink">{spread === null ? '—' : `${spread < 1 ? spread.toFixed(3) : spread.toFixed(1)} ms`}</p>
           <p className="text-[0.6875rem] text-[var(--color-ink-muted)]">average of the last {recent.length || 'few'} orders</p>
         </div>
-        <div className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3">
+        <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-3">
           <p className="label">Follower broker answer</p>
           <p className="tabular text-lg font-semibold text-ink">{avgAck === null ? '—' : `${Math.round(avgAck)} ms`}</p>
           <p className="text-[0.6875rem] text-[var(--color-ink-muted)]">
@@ -125,7 +126,7 @@ function BurstCard({ draft, onChange, balance }: { draft: Draft['burst']; onChan
       title="Burst"
       subtitle="Many small positions at once, each taking profit at the broker — the video's way of trading"
       actions={<Chip tone={draft.stopLossPrice ? 'neutral' : 'loss'}>{draft.stopLossPrice ? `stop ${draft.stopLossPrice.toFixed(2)}` : 'no stop loss'}</Chip>}
-      bodyClass="p-4 space-y-4"
+      bodyClass="px-5 pb-5 pt-3 space-y-4"
     >
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <NumberField label="Lot per position" value={draft.lot} onChange={(v) => set('lot', v)} step={0.01} min={0.01} suffix="lot" />
@@ -189,7 +190,7 @@ function BurstCard({ draft, onChange, balance }: { draft: Draft['burst']; onChan
       </div>
 
       {draft.direction === 'ai' && (
-        <p className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
+        <p className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
           Each burst goes the way the AI calls it when it is sure enough; when it is unsure the burst follows the trend below; and it holds
           the burst back when it expects the market to turn against the trend or reads it as dangerous — a burst has no stop, so staying out
           is the AI's most useful call.
@@ -215,7 +216,7 @@ function BurstCard({ draft, onChange, balance }: { draft: Draft['burst']; onChan
         </div>
       )}
 
-      <div className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
+      <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
         {balance > 0 ? (
           <>
             At {formatMoney(balance)} the next burst is{' '}
@@ -297,7 +298,7 @@ export function TradeSettings() {
   const maxTarget = draft.takeProfitUsd * draft.maxConcurrentPositions;
 
   return (
-    <div className="space-y-3 pb-4">
+    <div className="mx-auto w-full max-w-4xl space-y-4 pb-4">
       <StrategyCard />
 
       {burst && <BurstCard draft={draft.burst} balance={masterBalance} onChange={(next) => set('burst', next)} />}
@@ -314,7 +315,7 @@ export function TradeSettings() {
       <DispatchCard />
 
       {!builtin && (
-        <p className="rounded-xl border border-[var(--color-flame)]/30 bg-[var(--color-flame)]/[0.06] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
+        <p className="rounded-xl border border-[var(--color-ice)]/30 bg-[var(--color-ice)]/[0.06] px-3.5 py-3 text-xs leading-relaxed text-[var(--color-ink-dim)]">
           The built-in model is off: your EAs decide entries, lot sizes, stops and exits. The settings below are kept for when you switch one
           back on; <span className="text-ink">Session guards</span> still apply to the EAs — when a daily limit trips, their orders are refused
           the way MetaTrader refuses them with Algo Trading off.
@@ -327,7 +328,7 @@ export function TradeSettings() {
         </p>
       )}
 
-      <div className={builtin && !burst && !aiModel ? 'space-y-3' : 'space-y-3 opacity-60'}>
+      <div className={builtin && !burst && !aiModel ? 'space-y-4' : 'space-y-4 opacity-60'}>
       <Card
         title="Built-in model"
         subtitle={`${config.symbol} · dollar-based risk`}
@@ -343,7 +344,7 @@ export function TradeSettings() {
             </button>
           </div>
         }
-        bodyClass="p-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+        bodyClass="px-5 pb-5 pt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3"
       >
         <div>
           <label className="label">Strategy model</label>
@@ -391,7 +392,7 @@ export function TradeSettings() {
         actions={<Chip tone={draft.sizing === 'risk-percent' ? 'accent' : 'neutral'}>
           {draft.sizing === 'risk-percent' ? 'Adaptive' : 'Fixed lot'}
         </Chip>}
-        bodyClass="p-4 space-y-4"
+        bodyClass="px-5 pb-5 pt-3 space-y-4"
       >
         <Segmented
           label="Sizing mode"
@@ -443,7 +444,7 @@ export function TradeSettings() {
       <Card
         title="Fixed risk per leg"
         subtitle="Used when sizing is set to fixed lot"
-        bodyClass={`p-4 grid gap-4 md:grid-cols-3 ${draft.sizing === 'risk-percent' ? 'opacity-50' : ''}`}
+        bodyClass={`px-5 pb-5 pt-3 grid gap-4 md:grid-cols-3 ${draft.sizing === 'risk-percent' ? 'opacity-50' : ''}`}
       >
         <NumberField
           label="Lot size"
@@ -478,7 +479,7 @@ export function TradeSettings() {
         title="Multi-position execution"
         subtitle="How many trades the engine may run at the same time"
         actions={<Chip tone="accent">{draft.entriesPerSignal} legs / signal</Chip>}
-        bodyClass="p-4 space-y-4"
+        bodyClass="px-5 pb-5 pt-3 space-y-4"
       >
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           <NumberField
@@ -544,7 +545,7 @@ export function TradeSettings() {
           onChange={(v) => set('allowHedging', v)}
         />
 
-        <div className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] px-3.5 py-3 text-xs text-[var(--color-ink-dim)]">
+        <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-3 text-xs text-[var(--color-ink-dim)]">
           At full book the engine holds{' '}
           <span className="tabular font-semibold text-ink">
             {(draft.maxConcurrentPositions * draft.lotSize).toFixed(2)} lots
@@ -555,7 +556,7 @@ export function TradeSettings() {
         </div>
       </Card>
 
-      <Card title="Basket management" subtitle="Close every leg together on a combined result" bodyClass="p-4 grid gap-4 md:grid-cols-2">
+      <Card title="Basket management" subtitle="Close every leg together on a combined result" bodyClass="px-5 pb-5 pt-3 grid gap-4 md:grid-cols-2">
         <div className="space-y-3">
           <Toggle
             label="Basket take profit"
@@ -602,7 +603,7 @@ export function TradeSettings() {
             {stats ? `deficit ${formatMoney(stats.pendingDeficit)}` : 'idle'}
           </Chip>
         }
-        bodyClass="p-4 space-y-4"
+        bodyClass="px-5 pb-5 pt-3 space-y-4"
       >
         <Toggle
           label="Enable zero-loss postponement"
@@ -674,7 +675,7 @@ export function TradeSettings() {
 
       </div>
 
-      <Card title="Session guards" subtitle="Daily circuit breakers" bodyClass="p-4 grid gap-4 md:grid-cols-2">
+      <Card title="Session guards" subtitle="Daily circuit breakers" bodyClass="px-5 pb-5 pt-3 grid gap-4 md:grid-cols-2">
         <div className="space-y-3">
           <Toggle
             label="Daily loss limit"
@@ -709,6 +710,12 @@ export function TradeSettings() {
               min={1}
             />
           )}
+        </div>
+      </Card>
+
+      <Card title="Appearance" subtitle="System follows your device's light or dark setting">
+        <div className="max-w-sm">
+          <ThemeSwitch />
         </div>
       </Card>
 

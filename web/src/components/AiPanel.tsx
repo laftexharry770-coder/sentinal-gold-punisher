@@ -52,17 +52,17 @@ function ProbabilityMeter({ reading }: { reading: AiReading }) {
           </p>
         </div>
         <div className="text-right">
-          <p className="text-[0.625rem] font-bold uppercase tracking-[0.08em] text-[var(--color-ink-muted)]">Confidence</p>
+          <p className="text-[0.71875rem] font-medium text-[var(--color-ink-muted)]">Confidence</p>
           <p className="tabular text-sm font-semibold text-ink">{pct(reading.confidence)}</p>
         </div>
       </div>
-      <div className="relative mt-3 h-3 rounded-full bg-gradient-to-r from-loss/35 via-[#23262c] to-profit/35" role="img" aria-label={`Chance price is higher: ${pct(p)}`}>
+      <div className="relative mt-3 h-3 rounded-full bg-gradient-to-r from-loss/35 via-[var(--color-surface-3)] to-profit/35" role="img" aria-label={`Chance price is higher: ${pct(p)}`}>
         {/* The zones the AI trades in. */}
         <span className="absolute inset-y-0 left-0 rounded-l-full bg-loss/45" style={{ width: `${(1 - t) * 100}%` }} />
         <span className="absolute inset-y-0 right-0 rounded-r-full bg-profit/45" style={{ width: `${(1 - t) * 100}%` }} />
-        <span className="absolute inset-y-[-3px] left-1/2 w-px bg-[#8b8f97]/70" />
+        <span className="absolute inset-y-[-3px] left-1/2 w-px bg-[var(--color-ink-muted)]/70" />
         <span
-          className={`absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#0a0b0d] shadow-[0_0_0_2px_rgba(255,255,255,0.08)] transition-[left] duration-500 ${
+          className={`absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--color-surface)] shadow-[0_0_0_1px_var(--color-line-strong)] transition-[left] duration-500 ${
             lean === 'buy' ? 'bg-profit' : 'bg-loss'
           } ${reading.ready ? '' : 'opacity-40'}`}
           style={{ left: `${p * 100}%` }}
@@ -89,8 +89,8 @@ function ExpertBars({ reading }: { reading: AiReading }) {
             <span className="truncate text-[0.75rem] text-[var(--color-ink-dim)]" title={e.label}>
               {e.label}
             </span>
-            <span className="relative h-2 rounded-full bg-[#1b1e24]" role="img" aria-label={`${e.label}: ${e.score >= 0 ? 'bullish' : 'bearish'} ${Math.round(Math.abs(e.score) * 100)}%, weight ${pct(e.weight)}`}>
-              <span className="absolute inset-y-[-2px] left-1/2 w-px bg-[#8b8f97]/50" />
+            <span className="relative h-2 rounded-full bg-[var(--color-surface-3)]" role="img" aria-label={`${e.label}: ${e.score >= 0 ? 'bullish' : 'bearish'} ${Math.round(Math.abs(e.score) * 100)}%, weight ${pct(e.weight)}`}>
+              <span className="absolute inset-y-[-2px] left-1/2 w-px bg-[var(--color-ink-muted)]/50" />
               <span
                 className={`absolute inset-y-0 rounded-full ${e.score >= 0 ? 'bg-profit' : 'bg-loss'}`}
                 style={{
@@ -121,14 +121,14 @@ function DangerMeter({ reading }: { reading: AiReading }) {
   return (
     <div>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[0.625rem] font-bold uppercase tracking-[0.08em] text-[var(--color-ink-muted)]">Danger</span>
+        <span className="text-[0.71875rem] font-medium text-[var(--color-ink-muted)]">Danger</span>
         <span className={`tabular text-[0.75rem] font-semibold ${level >= 0.7 ? 'text-loss' : level >= 0.4 ? 'text-warn' : 'text-profit'}`}>
           {level >= 0.7 ? 'High' : level >= 0.4 ? 'Raised' : 'Calm'}
         </span>
       </div>
       <div className="mt-1.5 flex gap-1" aria-hidden="true">
         {Array.from({ length: segments }, (_, i) => (
-          <span key={i} className={`h-1.5 flex-1 rounded-full ${i < lit ? color : 'bg-[#23262c]'}`} />
+          <span key={i} className={`h-1.5 flex-1 rounded-full ${i < lit ? color : 'bg-[var(--color-surface-3)]'}`} />
         ))}
       </div>
       <p className="mt-1.5 text-[0.6875rem] leading-snug text-[var(--color-ink-muted)]">
@@ -140,8 +140,8 @@ function DangerMeter({ reading }: { reading: AiReading }) {
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-xl border border-[var(--color-line)] bg-black/25 px-3 py-2.5">
-      <p className="text-[0.625rem] font-bold uppercase tracking-[0.08em] text-[var(--color-ink-muted)]">{label}</p>
+    <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3 py-2.5">
+      <p className="text-[0.71875rem] font-medium text-[var(--color-ink-muted)]">{label}</p>
       <p className="tabular mt-1 text-base font-semibold leading-none text-ink">{value}</p>
       {sub && <p className="mt-1 truncate text-[0.6875rem] text-[var(--color-ink-muted)]">{sub}</p>}
     </div>
@@ -208,10 +208,10 @@ function ClaudeBlock({ ai, onOpenSettings }: { ai: AiStatus; onOpenSettings: () 
   };
 
   return (
-    <div className="rounded-xl border border-[var(--color-line)] bg-[#0e1116] p-3.5">
+    <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] p-3.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="flex items-center gap-2 text-[0.8125rem] font-semibold text-ink">
-          <span className={`h-2 w-2 rounded-full ${ai.claude.busy ? 'bg-warn live-dot' : ai.claude.configured && claude.enabled ? 'bg-profit' : 'bg-[#4a4f57]'}`} />
+          <span className={`h-2 w-2 rounded-full ${ai.claude.busy ? 'bg-warn live-dot' : ai.claude.configured && claude.enabled ? 'bg-profit' : 'bg-[var(--color-ink-faint)]'}`} />
           Claude's review
         </p>
         <p className="text-[0.6875rem] text-[var(--color-ink-muted)]">
@@ -238,7 +238,7 @@ function ClaudeBlock({ ai, onOpenSettings }: { ai: AiStatus; onOpenSettings: () 
 
       {ai.pending && (
         <div className="mt-3 space-y-2 rounded-lg border border-warn/40 bg-warn/[0.05] p-3">
-          <p className="text-[0.6875rem] font-bold uppercase tracking-[0.08em] text-warn">Suggestion waiting for you</p>
+          <p className="text-[0.8125rem] font-semibold text-warn">Suggestion waiting for you</p>
           <ReviewView review={ai.pending} now={now} />
           <div className="flex gap-2">
             <button className="btn btn-primary px-3 py-1.5 text-xs" disabled={busy !== null} onClick={() => void act('approve', () => api.approveAiSuggestion(), 'Suggestion applied')}>
@@ -255,7 +255,7 @@ function ClaudeBlock({ ai, onOpenSettings }: { ai: AiStatus; onOpenSettings: () 
         {!ai.claude.configured ? (
           <p className="text-[0.75rem] leading-relaxed text-[var(--color-ink-muted)]">
             With an Anthropic API key, Claude reads the AI's results every so often and tunes its settings — within the limits you set.{' '}
-            <button className="font-semibold text-ink underline decoration-[var(--color-flame)]/60 underline-offset-4" onClick={onOpenSettings}>
+            <button className="font-semibold text-ink underline decoration-[var(--color-ice)]/60 underline-offset-4" onClick={onOpenSettings}>
               Add a key in Settings
             </button>
           </p>
@@ -309,7 +309,7 @@ export function AiPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
           <SparkIcon /> AI analysis
         </h2>
         {reading && (
-          <span className="chip border-[var(--color-flame)]/40 bg-[var(--color-flame)]/10 text-[var(--color-flame)]">{AI_REGIME_LABELS[reading.regime]}</span>
+          <span className="chip border-[var(--color-ice)]/40 bg-[var(--color-ice)]/10 text-[var(--color-ice)]">{AI_REGIME_LABELS[reading.regime]}</span>
         )}
       </div>
       <p className="mt-1 text-[0.75rem] text-[var(--color-ink-muted)]">
@@ -326,7 +326,7 @@ export function AiPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
             <div>
               <div className="mb-2 flex items-baseline justify-between gap-2">
-                <p className="text-[0.625rem] font-bold uppercase tracking-[0.08em] text-[var(--color-ink-muted)]">Its experts</p>
+                <p className="text-[0.71875rem] font-medium text-[var(--color-ink-muted)]">Its experts</p>
                 <p className="tabular text-[0.625rem] text-[var(--color-ink-muted)]">
                   sell ← vote → buy · weight<span className="hidden sm:inline"> · right</span>
                 </p>
@@ -335,11 +335,11 @@ export function AiPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
             </div>
             <div className="space-y-4">
               <div>
-                <p className="text-[0.625rem] font-bold uppercase tracking-[0.08em] text-[var(--color-ink-muted)]">Why</p>
+                <p className="text-[0.71875rem] font-medium text-[var(--color-ink-muted)]">Why</p>
                 <ul className="mt-1.5 space-y-1.5">
                   {reading.reasons.map((r) => (
                     <li key={r} className="flex gap-2 text-[0.75rem] leading-snug text-[var(--color-ink-dim)]">
-                      <span className="mt-[0.4rem] h-1 w-1 shrink-0 rounded-full bg-[var(--color-flame)]" />
+                      <span className="mt-[0.4rem] h-1 w-1 shrink-0 rounded-full bg-[var(--color-ice)]" />
                       <span>{r}</span>
                     </li>
                   ))}
@@ -365,7 +365,7 @@ export function AiPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
           </div>
 
           {ai && ai.guard.vetoes > 0 && (
-            <p className="rounded-xl border border-[var(--color-line)] bg-black/25 px-3.5 py-2.5 text-[0.75rem] text-[var(--color-ink-dim)]">
+            <p className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-2.5 text-[0.75rem] text-[var(--color-ink-dim)]">
               EA guard refused <span className="font-semibold text-ink">{ai.guard.vetoes}</span> entr{ai.guard.vetoes === 1 ? 'y' : 'ies'}
               {ai.guard.last ? ` · last: ${ai.guard.last}` : ''}
             </p>

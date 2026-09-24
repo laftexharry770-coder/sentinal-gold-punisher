@@ -206,8 +206,8 @@ function ExpertInputs({ slot }: { slot: ExpertSlot }) {
       </div>
 
       {groups.map(([group, inputs]) => (
-        <fieldset key={group} className="rounded-xl border border-[var(--color-line)] bg-black/25 p-3.5">
-          <legend className="px-1.5 text-[0.6875rem] font-bold uppercase tracking-[0.08em] text-[var(--color-flame)]">{groupTitle(group)}</legend>
+        <fieldset key={group} className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] p-3.5">
+          <legend className="px-1.5 text-[0.8125rem] font-semibold text-ink">{groupTitle(group)}</legend>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {inputs.map((input) => (
               <InputRow
@@ -250,8 +250,8 @@ function ExpertInputs({ slot }: { slot: ExpertSlot }) {
 const STATUS_DOT: Record<StrategyInfo['status'], string> = {
   running: 'bg-profit live-dot',
   waiting: 'bg-warn',
-  idle: 'bg-[#4a4f57]',
-  stopped: 'bg-[#4a4f57]',
+  idle: 'bg-[var(--color-ink-faint)]',
+  stopped: 'bg-[var(--color-ink-faint)]',
   failed: 'bg-loss',
 };
 
@@ -301,16 +301,16 @@ function ExpertRow({ slot, botRunning, open, onToggleOpen }: { slot: ExpertSlot;
   };
 
   return (
-    <li className={`rounded-xl border bg-[#0e1116]/80 transition-colors ${slot.enabled ? 'border-[var(--color-flame)]/35' : 'border-[var(--color-line)]'}`}>
+    <li className={`rounded-xl border bg-[var(--color-well)] transition-colors ${slot.enabled ? 'border-[var(--color-ice)]/35' : 'border-[var(--color-line)]'}`}>
       <div className="flex items-center gap-3 px-3.5 py-3">
-        <span className={`h-2 w-2 shrink-0 rounded-full ${slot.enabled ? STATUS_DOT[info.status] : 'bg-[#4a4f57]'}`} aria-hidden="true" />
+        <span className={`h-2 w-2 shrink-0 rounded-full ${slot.enabled ? STATUS_DOT[info.status] : 'bg-[var(--color-ink-faint)]'}`} aria-hidden="true" />
         <button type="button" className="min-w-0 flex-1 text-left" aria-expanded={open} onClick={onToggleOpen}>
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="truncate text-sm font-semibold text-ink">{info.name}</span>
             <span className="rounded-md border border-[var(--color-line)] px-1.5 py-px font-mono text-[0.625rem] text-[var(--color-ink-muted)]">
               {slot.kind === 'ex5' ? '.ex5 · mirror' : '.mq5'}
             </span>
-            {slot.bundled && <span className="rounded-md border border-gold/40 px-1.5 py-px text-[0.625rem] font-semibold text-gold">built in</span>}
+            {slot.bundled && <span className="rounded-md border border-[var(--color-line-strong)] px-1.5 py-px text-[0.625rem] font-semibold text-[var(--color-ink-dim)]">built in</span>}
           </span>
           <span className={`mt-0.5 block truncate text-[0.6875rem] ${info.status === 'failed' ? 'text-loss' : 'text-[var(--color-ink-muted)]'}`}>{expertLine(slot, botRunning)}</span>
         </button>
@@ -342,7 +342,7 @@ function ExpertRow({ slot, botRunning, open, onToggleOpen }: { slot: ExpertSlot;
                 </p>
               )}
               {panelText && (
-                <details className="rounded-xl border border-[var(--color-line)] bg-black/30 px-3.5 py-2.5" open={info.status === 'running'}>
+                <details className="rounded-xl border border-[var(--color-line)] bg-[var(--color-well)] px-3.5 py-2.5" open={info.status === 'running'}>
                   <summary className="cursor-pointer text-xs font-semibold text-[var(--color-ink-dim)]">Status panel</summary>
                   <pre className="tabular mt-2 overflow-x-auto whitespace-pre text-[0.6875rem] leading-relaxed">{panelText}</pre>
                 </details>
@@ -462,11 +462,11 @@ export function StrategyCard() {
       subtitle="The built-in model and your EA library — change either any time"
       actions={
         <div className="flex items-center gap-1.5">
-          <Chip tone="gold">{config.strategy === 'none' ? 'EAs only' : config.strategy === 'ai' ? 'AI' : config.strategy === 'burst' ? 'Burst' : config.strategy}</Chip>
+          <Chip tone="accent">{config.strategy === 'none' ? 'EAs only' : config.strategy === 'ai' ? 'AI' : config.strategy === 'burst' ? 'Burst' : config.strategy}</Chip>
           <Chip tone={on.length > 0 ? 'profit' : 'neutral'}>{on.length} EA{on.length === 1 ? '' : 's'} on</Chip>
         </div>
       }
-      bodyClass="p-4 space-y-5"
+      bodyClass="px-5 pb-5 pt-3 space-y-5"
     >
       <BuiltinSwitch />
 
@@ -492,7 +492,7 @@ export function StrategyCard() {
             void onFiles(e.dataTransfer.files);
           }}
         >
-          <svg viewBox="0 0 24 24" fill="none" className="h-7 w-7 text-[var(--color-flame)]" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" className="h-7 w-7 text-[var(--color-ice)]" aria-hidden="true">
             <path d="M12 15.5V4.5m0 0-4 4m4-4 4 4M5 15v2.5A2 2 0 0 0 7 19.5h10a2 2 0 0 0 2-2V15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <p className="text-sm font-semibold text-ink">Drop EAs here — as many as you like</p>

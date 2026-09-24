@@ -10,16 +10,8 @@ import { Money } from '../components/ui';
 import { useTerminal } from '../store';
 
 /* ------------------------------------------------------------------ */
-/* Icons, drawn to match the reference panel                           */
+/* Icons                                                               */
 /* ------------------------------------------------------------------ */
-
-const ServerIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
-    <rect x="3.5" y="4" width="17" height="6.5" rx="1.6" stroke="currentColor" strokeWidth="1.8" />
-    <rect x="3.5" y="13.5" width="17" height="6.5" rx="1.6" stroke="currentColor" strokeWidth="1.8" />
-    <path d="M7 7.25h.01M7 16.75h.01" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-  </svg>
-);
 
 const RobotIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
@@ -31,12 +23,6 @@ const RobotIcon = () => (
 const PulseIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
     <path d="M2.5 12h4l2.5-6 4.5 12 2.5-6h5.5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-
-const TrashIcon = () => (
-  <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
-    <path d="M4 6h12M8 6V4.5h4V6M6 6l.7 10h6.6L14 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 
@@ -79,7 +65,7 @@ function useNow(intervalMs = 1000): number {
   return now;
 }
 
-/** The price line of the reference panel: flame on black, over a dashed open line. */
+/** Recent price in ice, over a dashed line at where the window opened. */
 function LiveLine({ points }: { points: number[] }) {
   if (points.length < 2) {
     return <div className="grid h-[112px] place-items-center text-xs text-[var(--color-ink-muted)]">Waiting for quotes…</div>;
@@ -100,13 +86,13 @@ function LiveLine({ points }: { points: number[] }) {
     <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="h-[112px] w-full" role="img" aria-label="Recent price">
       <defs>
         <linearGradient id="live-fill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="var(--color-flame)" stopOpacity="0.28" />
-          <stop offset="100%" stopColor="var(--color-flame)" stopOpacity="0" />
+          <stop offset="0%" stopColor="var(--color-ice)" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="var(--color-ice)" stopOpacity="0" />
         </linearGradient>
       </defs>
-      <line x1="0" x2={width} y1={base} y2={base} stroke="#8b8f97" strokeOpacity="0.55" strokeWidth="1" strokeDasharray="3 4" />
+      <line x1="0" x2={width} y1={base} y2={base} style={{ stroke: 'var(--color-ink-muted)' }} strokeOpacity="0.55" strokeWidth="1" strokeDasharray="3 4" />
       <polygon points={`0,${height} ${line} ${width},${height}`} fill="url(#live-fill)" />
-      <polyline points={line} fill="none" stroke="var(--color-flame)" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <polyline points={line} fill="none" stroke="var(--color-ice)" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       <circle cx={x(points.length - 1)} cy={y(last)} r="3.4" fill={up ? 'var(--color-profit)' : 'var(--color-loss)'} />
     </svg>
   );
@@ -117,28 +103,35 @@ type CheckState = 'ok' | 'wait' | 'off' | 'bad';
 const DOT: Record<CheckState, string> = {
   ok: 'bg-profit live-dot',
   wait: 'bg-warn',
-  off: 'bg-[#4a4f57]',
+  off: 'bg-[var(--color-ink-faint)]',
   bad: 'bg-loss',
 };
 
+const STATE_LABEL: Record<CheckState, string> = { ok: 'working', wait: 'waiting', off: 'off', bad: 'problem' };
+
 function Check({ icon, title, detail, state }: { icon: ReactNode; title: string; detail: string; state: CheckState }) {
   return (
-    <li className="flex items-center gap-3 py-2.5">
-      <span className="text-[var(--color-flame)]">{icon}</span>
+    <li className="well flex items-start gap-3 px-3 py-2.5">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-ice)]/10 text-[var(--color-ice)]">{icon}</span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[0.8125rem] font-medium text-ink">{title}</span>
-        <span className="block truncate text-[0.6875rem] text-[var(--color-ink-muted)]">{detail}</span>
+        <span className="flex items-center justify-between gap-2">
+          <span className="text-[0.8125rem] font-semibold text-ink">{title}</span>
+          <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[state]}`} role="img" aria-label={STATE_LABEL[state]} />
+        </span>
+        <span className="mt-0.5 line-clamp-2 text-[0.71875rem] leading-snug text-[var(--color-ink-muted)]" title={detail}>
+          {detail}
+        </span>
       </span>
-      <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[state]}`} aria-label={state} />
     </li>
   );
 }
 
-function Field({ label, value }: { label: string; value: ReactNode }) {
+/** A figure in the hero strip: a quiet label over a tabular number. */
+function Figure({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div>
-      <p className="panel-field-label">{label}</p>
-      <p className="panel-field-value">{value}</p>
+    <div className="min-w-0">
+      <p className="text-[0.75rem] text-[var(--color-ink-muted)]">{label}</p>
+      <p className="tabular mt-0.5 truncate text-[0.9375rem] font-semibold text-ink">{children}</p>
     </div>
   );
 }
@@ -284,156 +277,158 @@ export function ControlPanel({ session, onOpenSettings }: { session: SessionStat
   const botPositions = positions.filter((p) => p.accountId === master?.id);
   const floating = botPositions.reduce((sum, p) => sum + p.profit, 0);
 
-  return (
-    <div className="mx-auto w-full max-w-5xl space-y-5 pb-6">
-      {/* Connection */}
-      <header className="px-1 pt-1">
-        <p className={`text-2xl font-extrabold tracking-wide ${master?.connected ? 'text-[#2bd26b]' : 'text-warn'}`}>
-          {master?.connected ? 'CONNECTED' : 'CONNECTING'}
-        </p>
-        <p className="mt-0.5 text-sm text-[var(--color-ink-muted)]">
-          {master?.connected ? `Connected to ${connectedTo}` : master?.connectionError ?? 'Reaching your broker…'}
-        </p>
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
-          <span className={`chip ${live ? 'border-loss/50 bg-loss/12 text-loss' : 'border-[var(--color-line)] bg-[var(--color-surface-2)] text-[var(--color-ink-dim)]'}`}>
-            {demo ? 'Simulated' : live ? 'Real orders' : 'Paper orders'}
-          </span>
-          {master?.avgLatencyMs !== null && master?.avgLatencyMs !== undefined && (
-            <span className="chip border-[var(--color-line)] bg-[var(--color-surface-2)] text-[var(--color-ink-dim)]">
-              broker ack {master.avgLatencyMs} ms
-            </span>
-          )}
-        </div>
-      </header>
+  const first = points[0];
+  const last = points[points.length - 1];
+  const change = first !== undefined && last !== undefined && points.length > 1 ? last - first : null;
+  const accountLine = master
+    ? [master.broker, master.login, master.server, `${ACCOUNT_TYPE[master.accountType]} ${master.platform === 'mt4' ? 'MT4' : 'MT5'}`].filter(Boolean).join(' · ')
+    : 'No account linked';
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {/* MT5 account */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="panel-head">
-              <ServerIcon /> {master?.platform === 'mt4' ? 'MT4' : 'MT5'} Account
-            </h2>
-            <button
-              className="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-stop)] disabled:opacity-50"
-              disabled={busy !== null}
-              onClick={() => void remove()}
-            >
-              <TrashIcon /> Remove
-            </button>
+  return (
+    <div className="mx-auto w-full max-w-6xl space-y-4 pb-6 lg:space-y-5">
+      {/* Account and bot, at a glance */}
+      <section className="card overflow-hidden">
+        <div className="flex flex-col gap-6 p-5 sm:p-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className={`chip ${master?.connected ? 'border-profit/30 bg-profit/10 text-profit' : 'border-warn/30 bg-warn/10 text-warn'}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${master?.connected ? 'bg-profit live-dot' : 'bg-warn'}`} />
+                {master?.connected ? `Connected to ${connectedTo}` : master?.connectionError ?? 'Connecting…'}
+              </span>
+              <span className={`chip ${live ? 'border-loss/35 bg-loss/10 text-loss' : 'border-[var(--color-line)] bg-[var(--color-surface-2)] text-[var(--color-ink-dim)]'}`}>
+                {demo ? 'Simulated' : live ? 'Real orders' : 'Paper orders'}
+              </span>
+              {master?.avgLatencyMs !== null && master?.avgLatencyMs !== undefined && (
+                <span className="chip tabular border-[var(--color-line)] bg-[var(--color-surface-2)] text-[var(--color-ink-dim)]">
+                  broker ack {master.avgLatencyMs} ms
+                </span>
+              )}
+            </div>
+            <p className="mt-5 text-[0.8125rem] text-[var(--color-ink-muted)]">Equity</p>
+            <p className="tabular mt-1 text-[2.25rem] font-semibold leading-none tracking-[-0.03em] text-ink sm:text-[2.75rem]">
+              {master ? formatMoney(master.equity) : '—'}
+            </p>
+            <div className="mt-5 grid grid-cols-3 gap-4 sm:flex sm:gap-8">
+              <Figure label="Balance">{master ? formatMoney(master.balance) : '—'}</Figure>
+              <Figure label="Floating">
+                <Money value={floating} />
+              </Figure>
+              <Figure label="Open">{botPositions.length}</Figure>
+            </div>
           </div>
 
-          {master ? (
-            <div className="mt-5 space-y-4">
-              <Field label="Broker" value={master.broker} />
-              <Field label="Login" value={master.login} />
-              <Field label="Server" value={master.server} />
-              <Field label="Account type" value={ACCOUNT_TYPE[master.accountType]} />
-              <div className="grid grid-cols-3 gap-3 border-t border-[var(--color-line)] pt-4">
-                <div>
-                  <p className="panel-field-label">Balance</p>
-                  <p className="tabular mt-1 text-sm font-semibold text-ink">{formatMoney(master.balance)}</p>
-                </div>
-                <div>
-                  <p className="panel-field-label">Equity</p>
-                  <p className="tabular mt-1 text-sm font-semibold text-ink">{formatMoney(master.equity)}</p>
-                </div>
-                <div>
-                  <p className="panel-field-label">Floating</p>
-                  <p className="mt-1 text-sm font-semibold">
-                    <Money value={floating} />
-                  </p>
-                </div>
-              </div>
+          <div className="flex w-full flex-col gap-3 lg:w-auto lg:max-w-sm lg:items-end">
+            <div className="lg:text-right">
+              <p className="flex items-center gap-2 text-sm lg:justify-end">
+                <span className={`h-2 w-2 rounded-full ${running ? 'bg-profit live-dot' : 'bg-[var(--color-ink-faint)]'}`} />
+                <span className={running ? 'font-semibold text-ink' : 'font-semibold text-[var(--color-ink-dim)]'}>{running ? 'Bot running' : 'Bot stopped'}</span>
+              </p>
+              <p className="mt-1 text-[0.8125rem] leading-snug text-[var(--color-ink-muted)]">{monitoring}</p>
+              {stats?.haltReason && <p className="mt-1 text-[0.8125rem] text-loss">{stats.haltReason}</p>}
             </div>
-          ) : (
-            <p className="mt-4 text-sm text-[var(--color-ink-muted)]">No account linked.</p>
-          )}
-        </section>
+            <div className="grid grid-cols-2 gap-2.5 lg:flex">
+              <button className="btn btn-primary px-6 py-3 text-sm" disabled={running || busy !== null || !master} onClick={() => void start()}>
+                <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" aria-hidden="true">
+                  <path d="M6.5 4.8v10.4a.8.8 0 0 0 1.2.7l8.3-5.2a.8.8 0 0 0 0-1.4L7.7 4.1a.8.8 0 0 0-1.2.7Z" fill="currentColor" />
+                </svg>
+                {busy === 'start' ? 'Starting…' : 'Start bot'}
+              </button>
+              <button className="btn btn-stop px-6 py-3 text-sm" disabled={!running || busy !== null} onClick={() => void stop()}>
+                <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" aria-hidden="true">
+                  <rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" />
+                </svg>
+                {busy === 'stop' ? 'Stopping…' : 'Stop bot'}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--color-line)] bg-[var(--color-surface-2)] px-5 py-3 sm:px-6">
+          <p className="tabular min-w-0 truncate text-[0.75rem] text-[var(--color-ink-muted)]">{accountLine}</p>
+          <button
+            className="shrink-0 text-[0.75rem] font-semibold text-[var(--color-ink-muted)] transition-colors hover:text-loss disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => void remove()}
+          >
+            {demo ? 'Leave demo' : 'Disconnect'}
+          </button>
+        </div>
+      </section>
 
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] lg:gap-5">
         {/* Live analysis */}
         <section className="card p-5">
-          <h2 className="flex items-center gap-2 text-[0.8125rem] font-bold uppercase tracking-wide text-[#2bd26b]">
-            <PulseIcon /> Live analysis
-          </h2>
-          <div className="mt-3 overflow-hidden rounded-xl bg-black/40">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="panel-head">
+                <PulseIcon /> Live analysis
+              </h2>
+              <p className="mt-0.5 text-[0.75rem] text-[var(--color-ink-muted)]">Every light reports something measured</p>
+            </div>
+            {quote && (
+              <div className="text-right">
+                <p className="tabular text-base font-semibold text-ink">{formatPrice((quote.bid + quote.ask) / 2)}</p>
+                {change !== null && (
+                  <p className={`tabular text-[0.75rem] font-medium ${change >= 0 ? 'text-profit' : 'text-loss'}`}>
+                    {change >= 0 ? '+' : '−'}
+                    {Math.abs(change).toFixed(2)}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="mt-4">
             <LiveLine points={points} />
           </div>
-          <ul className="mt-2 divide-y divide-[var(--color-line)]/60">
+          <ul className="mt-4 grid gap-2 sm:grid-cols-2">
             <Check icon={<TargetIcon />} title="Reading market" detail={market.detail} state={market.state} />
-            <Check icon={<DialIcon />} title="Calibrating stop loss" detail={stops.detail} state={stops.state} />
+            <Check icon={<DialIcon />} title="Stops and risk" detail={stops.detail} state={stops.state} />
             <Check icon={<BrainIcon />} title="Scoring signals" detail={scoring.detail} state={scoring.state} />
             <Check icon={<LinkIcon />} title="Copying to followers" detail={copying.detail} state={copying.state} />
           </ul>
-          <p className="mt-3 text-center text-xs text-[var(--color-ink-dim)]">{monitoring}</p>
+        </section>
+
+        {/* What trades */}
+        <section className="card p-5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="panel-head">
+              <RobotIcon /> Strategy
+            </h2>
+            <button className="text-[0.75rem] font-semibold text-[var(--color-ice)] hover:underline hover:underline-offset-4" onClick={onOpenSettings}>
+              Settings
+            </button>
+          </div>
+
+          <div className="mt-4">
+            <StrategySwitch onManage={onOpenSettings} />
+          </div>
+
+          {config.strategy === 'burst' && master && (
+            <div className="well tabular mt-3 px-3.5 py-2.5 text-[0.75rem] leading-relaxed text-[var(--color-ink-dim)]">
+              Next burst: <span className="font-semibold text-ink">{burstCount} × {config.burst.lot.toFixed(2)}</span>{' '}
+              {config.burst.direction === 'ai' ? "the AI's way" : config.burst.direction === 'trend' ? 'with the trend' : config.burst.direction.toUpperCase()} · TP +
+              {config.burst.takeProfitPrice.toFixed(2)}
+              {config.burst.stopLossPrice ? ` · SL ${config.burst.stopLossPrice.toFixed(2)}` : ' · no stop loss'}
+              {burstCount > 0 && (
+                <span className="block text-[var(--color-ink-muted)]">
+                  +{formatMoney(burstCount * config.burst.lot * 100 * config.burst.takeProfitPrice)} if it reaches take profit ·{' '}
+                  <span className="text-loss">a {(master.balance / (burstCount * config.burst.lot * 100)).toFixed(2)} move against it costs the whole balance</span>
+                </span>
+              )}
+            </div>
+          )}
+
+          {experts
+            .filter((e) => e.enabled && (e.info.panel.length > 0 || e.info.comment))
+            .map((e) => (
+              <details key={e.id} className="well mt-3 px-3.5 py-2.5" open={running}>
+                <summary className="cursor-pointer text-[0.75rem] font-semibold text-[var(--color-ink-dim)]">{e.info.name} — status panel</summary>
+                <pre className="mt-2 overflow-x-auto whitespace-pre font-mono text-[0.6875rem] leading-relaxed text-[var(--color-ink-dim)]">
+                  {[...e.info.panel, ...(e.info.comment ? [e.info.comment] : [])].join('\n')}
+                </pre>
+              </details>
+            ))}
         </section>
       </div>
-
-      {/* Bot control */}
-      <section className="card p-5">
-        <h2 className="panel-head">
-          <RobotIcon /> Bot control
-        </h2>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-bold text-ink">Bot Status</p>
-            <p className="mt-1 flex items-center gap-2 text-sm">
-              <span className={`h-2 w-2 rounded-full ${running ? 'bg-profit live-dot' : 'bg-[#4a4f57]'}`} />
-              <span className={running ? 'font-semibold text-profit' : 'text-[var(--color-ink-muted)]'}>
-                {running ? 'Running' : 'Stopped'}
-              </span>
-              {stats?.haltReason && <span className="text-xs text-loss">· {stats.haltReason}</span>}
-            </p>
-          </div>
-          <button className="text-right text-xs font-semibold text-[var(--color-ink-muted)] underline decoration-[var(--color-flame)]/50 underline-offset-4" onClick={onOpenSettings}>
-            Strategy settings
-          </button>
-        </div>
-
-        <div className="mt-4">
-          <StrategySwitch onManage={onOpenSettings} />
-        </div>
-
-        {config.strategy === 'burst' && master && (
-          <p className="tabular mt-3 rounded-xl border border-[var(--color-line)] bg-black/30 px-3.5 py-2.5 text-[0.75rem] leading-relaxed text-[var(--color-ink-dim)]">
-            Next burst: <span className="font-semibold text-ink">{burstCount} × {config.burst.lot.toFixed(2)}</span>{' '}
-            {config.burst.direction === 'ai' ? "the AI's way" : config.burst.direction === 'trend' ? 'with the trend' : config.burst.direction.toUpperCase()} · TP +
-            {config.burst.takeProfitPrice.toFixed(2)}
-            {config.burst.stopLossPrice ? ` · SL ${config.burst.stopLossPrice.toFixed(2)}` : ' · no stop loss'}
-            {burstCount > 0 && (
-              <span className="block text-[var(--color-ink-muted)]">
-                +{formatMoney(burstCount * config.burst.lot * 100 * config.burst.takeProfitPrice)} if it reaches take profit ·{' '}
-                <span className="text-loss">a {(master.balance / (burstCount * config.burst.lot * 100)).toFixed(2)} move against it costs the whole balance</span>
-              </span>
-            )}
-          </p>
-        )}
-
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <button className="btn btn-go py-3.5 text-sm font-bold uppercase tracking-wide" disabled={running || busy !== null || !master} onClick={() => void start()}>
-            <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
-              <path d="M16 10a6 6 0 1 1-2.2-4.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            {busy === 'start' ? 'Starting…' : 'Start bot'}
-          </button>
-          <button className="btn btn-stop py-3.5 text-sm font-bold uppercase tracking-wide" disabled={!running || busy !== null} onClick={() => void stop()}>
-            <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden="true">
-              <rect x="5" y="5" width="10" height="10" rx="1.5" fill="currentColor" />
-            </svg>
-            {busy === 'stop' ? 'Stopping…' : 'Stop bot'}
-          </button>
-        </div>
-
-        {experts
-          .filter((e) => e.enabled && (e.info.panel.length > 0 || e.info.comment))
-          .map((e) => (
-            <details key={e.id} className="mt-4 rounded-xl border border-[var(--color-line)] bg-black/30 px-3.5 py-2.5" open={running}>
-              <summary className="cursor-pointer text-xs font-semibold text-[var(--color-ink-dim)]">{e.info.name} — status panel</summary>
-              <pre className="tabular mt-2 overflow-x-auto whitespace-pre text-[0.6875rem] leading-relaxed text-[var(--color-ink-dim)]">
-                {[...e.info.panel, ...(e.info.comment ? [e.info.comment] : [])].join('\n')}
-              </pre>
-            </details>
-          ))}
-      </section>
 
       <AiPanel onOpenSettings={onOpenSettings} />
 
@@ -442,17 +437,17 @@ export function ControlPanel({ session, onOpenSettings }: { session: SessionStat
           <h2 className="panel-head">
             <LinkIcon /> Copy followers
           </h2>
-          <ul className="mt-3 divide-y divide-[var(--color-line)]/70">
+          <ul className="mt-3 divide-y divide-[var(--color-line)]">
             {followers.map((f) => (
-              <li key={f.id} className="flex items-center gap-3 py-2.5">
+              <li key={f.id} className="flex items-center gap-3 py-3">
                 <span className={`h-2 w-2 shrink-0 rounded-full ${f.connected ? 'bg-profit' : 'bg-loss'}`} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-ink">{f.name}</span>
-                  <span className="tabular block truncate text-[0.6875rem] text-[var(--color-ink-muted)]">
+                  <span className="tabular block truncate text-[0.71875rem] text-[var(--color-ink-muted)]">
                     {f.login} · {f.server} · {f.symbol} · ×{f.copy.sizing === 'multiplier' ? f.copy.multiplier : f.copy.sizing === 'fixed' ? `${f.copy.fixedLot} lot` : 'balance'}
                   </span>
                 </span>
-                <span className="tabular shrink-0 text-right text-[0.6875rem] text-[var(--color-ink-dim)]">
+                <span className="tabular shrink-0 text-right text-[0.71875rem] text-[var(--color-ink-dim)]">
                   {f.avgLatencyMs !== null ? `${f.avgLatencyMs} ms` : '—'}
                   <span className="block text-[var(--color-ink-muted)]">{f.openPositions} open</span>
                 </span>

@@ -32,20 +32,20 @@ export function toast(text: string, tone: ToastTone = 'success', ms = 2600): voi
 const ICON: Record<ToastTone, ReactNode> = {
   success: (
     <svg viewBox="0 0 20 20" className="h-[18px] w-[18px] shrink-0" aria-hidden="true">
-      <circle cx="10" cy="10" r="9" fill="#101216" />
-      <path d="m6.2 10.3 2.4 2.4 5.2-5.3" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="10" cy="10" r="9" style={{ fill: 'var(--color-profit)' }} />
+      <path d="m6.2 10.3 2.4 2.4 5.2-5.3" fill="none" style={{ stroke: 'var(--color-base)' }} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
   error: (
     <svg viewBox="0 0 20 20" className="h-[18px] w-[18px] shrink-0" aria-hidden="true">
-      <circle cx="10" cy="10" r="9" fill="#d93a5b" />
-      <path d="M10 5.6v5.2M10 14.1v.1" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="10" cy="10" r="9" fill="#ffffff" fillOpacity="0.22" />
+      <path d="M10 5.6v5.2M10 14.1v.1" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
     </svg>
   ),
   info: (
     <svg viewBox="0 0 20 20" className="h-[18px] w-[18px] shrink-0" aria-hidden="true">
-      <circle cx="10" cy="10" r="9" fill="#101216" />
-      <path d="M10 9v5M10 5.9v.1" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="10" cy="10" r="9" style={{ fill: 'var(--color-ice)' }} />
+      <path d="M10 9v5M10 5.9v.1" style={{ stroke: 'var(--color-on-ice)' }} strokeWidth="2" strokeLinecap="round" />
     </svg>
   ),
 };

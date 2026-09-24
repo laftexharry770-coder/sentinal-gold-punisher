@@ -54,12 +54,12 @@ export function BuiltinSwitch({ compact = false }: { compact?: boolean }) {
               title={o.label}
               className={`min-w-0 rounded-xl border px-2 py-2.5 text-left transition-colors disabled:opacity-45 sm:px-2.5 ${
                 active
-                  ? 'border-[var(--color-flame)]/70 bg-[var(--color-flame)]/[0.08]'
-                  : 'border-[var(--color-line)] bg-[#0e1116] hover:border-[#39404a]'
+                  ? 'border-[var(--color-ice)]/70 bg-[var(--color-ice)]/[0.08]'
+                  : 'border-[var(--color-line)] bg-[var(--color-well)] hover:border-[var(--color-line-strong)]'
               }`}
             >
               <span className="flex min-w-0 items-center gap-1.5 sm:gap-2">
-                <span className={`h-2 w-2 shrink-0 rounded-full ${active ? 'bg-[var(--color-flame)]' : 'bg-[#4a4f57]'}`} />
+                <span className={`h-2 w-2 shrink-0 rounded-full ${active ? 'bg-[var(--color-ice)]' : 'bg-[var(--color-ink-faint)]'}`} />
                 <span className="truncate text-[0.8125rem] font-semibold text-ink sm:text-sm">{busy === o.id ? 'Switching…' : o.label}</span>
               </span>
               <span className="mt-0.5 block truncate text-[0.6875rem] text-[var(--color-ink-muted)] sm:pl-4">{o.hint}</span>
@@ -77,8 +77,8 @@ export function BuiltinSwitch({ compact = false }: { compact?: boolean }) {
 const DOT: Record<ExpertSlot['info']['status'], string> = {
   running: 'bg-profit live-dot',
   waiting: 'bg-warn',
-  idle: 'bg-[#4a4f57]',
-  stopped: 'bg-[#4a4f57]',
+  idle: 'bg-[var(--color-ink-faint)]',
+  stopped: 'bg-[var(--color-ink-faint)]',
   failed: 'bg-loss',
 };
 
@@ -104,9 +104,9 @@ export function ExpertSwitches({ limit = 6, onManage }: { limit?: number; onMana
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between gap-2">
-        <p className="text-[0.6875rem] font-bold uppercase tracking-[0.08em] text-[var(--color-ink-muted)]">Expert advisors</p>
+        <p className="text-[0.75rem] font-semibold text-[var(--color-ink-dim)]">Expert advisors</p>
         {onManage && (
-          <button className="text-[0.6875rem] font-semibold text-[var(--color-ink-muted)] underline decoration-[var(--color-flame)]/50 underline-offset-4" onClick={onManage}>
+          <button className="text-[0.6875rem] font-semibold text-[var(--color-ink-muted)] underline decoration-[var(--color-ice)]/50 underline-offset-4" onClick={onManage}>
             {experts.length === 0 ? 'Add EAs' : 'Manage'}
           </button>
         )}
@@ -116,10 +116,10 @@ export function ExpertSwitches({ limit = 6, onManage }: { limit?: number; onMana
           No EAs in the library — add as many .mq5 or .ex5 files as you like in Settings.
         </p>
       ) : (
-        <ul className="divide-y divide-[var(--color-line)]/70 rounded-xl border border-[var(--color-line)] bg-[#0e1116]">
+        <ul className="divide-y divide-[var(--color-line)]/70 rounded-xl border border-[var(--color-line)] bg-[var(--color-well)]">
           {shown.map((slot) => (
             <li key={slot.id} className="flex items-center gap-3 px-3 py-2">
-              <span className={`h-2 w-2 shrink-0 rounded-full ${slot.enabled ? DOT[slot.info.status] : 'bg-[#4a4f57]'}`} aria-hidden="true" />
+              <span className={`h-2 w-2 shrink-0 rounded-full ${slot.enabled ? DOT[slot.info.status] : 'bg-[var(--color-ink-faint)]'}`} aria-hidden="true" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[0.8125rem] font-semibold text-ink">{slot.info.name}</span>
                 <span className={`block truncate text-[0.6875rem] ${slot.info.status === 'failed' ? 'text-loss' : 'text-[var(--color-ink-muted)]'}`}>

@@ -2,7 +2,13 @@
 @import './fonts-embedded.css';
 
 /* ------------------------------------------------------------------ */
-/* Graphite &amp; Brass — Sentinal MT5 design system                       */
+/* Sentinal — design system                                            */
+/*                                                                      */
+/* Calm surfaces, one accent. Ice blue is the only colour that means    */
+/* "act here"; green and red mean profit and loss and nothing else;     */
+/* gold appears only where it means the gold price. Everything else is */
+/* a neutral with a cool cast, in two themes that share one set of      */
+/* names, so a component never knows which theme it is in.             */
 /* ------------------------------------------------------------------ */
 
 @theme {
@@ -12,50 +18,88 @@
   --font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  --color-base: #0a0b0d;
-  --color-surface: #141519;
-  --color-surface-2: #1a1c21;
-  --color-surface-3: #23262c;
-  --color-line: #2a2d34;
-  --color-line-soft: #21242a66;
+  /* Dark theme (the default; light overrides the same names below). */
+  --color-base: #0a0d12;
+  --color-surface: #10141b;
+  --color-surface-2: #151a22;
+  --color-surface-3: #1c222c;
+  --color-well: #0c1016;
+  --color-line: #1e2530;
+  --color-line-strong: #2b3441;
+  --color-line-soft: #1e253080;
 
-  --color-ink: #ecedf0;
-  --color-ink-dim: #abaeb6;
-  --color-ink-muted: #74787f;
+  --color-ink: #e9eef5;
+  --color-ink-dim: #a3adbb;
+  --color-ink-muted: #6c7787;
+  --color-ink-faint: #3a4452;
 
-  /*
-   * Brass. The instrument is gold, so the terminal's own accent is drawn from
-   * it — warm enough to give the greys a temperature, dim enough that the
-   * signal colours still read louder than the furniture.
-   */
-  --color-brass: #c08b3c;
-  --color-brass-bright: #e0ac57;
-  --color-brass-deep: #7d5921;
+  /* Ice: the one accent. */
+  --color-ice: #7cc8f4;
+  --color-ice-bright: #aadcfa;
+  --color-ice-deep: #2a78a8;
+  --color-on-ice: #04182a;
 
-  /*
-   * The accent is graphite rather than a hue. Colour is reserved for meaning
-   * here — green for profit, red for loss, gold for the instrument — so an
-   * accent that carries none stays out of their way.
-   */
-  --color-accent: #5c646f;
-  --color-accent-bright: #9aa2ad;
-  --color-accent-deep: #3c424b;
+  /* Older names, kept as aliases of the accent so nothing reverts to brass. */
+  --color-accent: var(--color-ice);
+  --color-accent-bright: var(--color-ice-bright);
+  --color-accent-deep: var(--color-ice-deep);
+  --color-brass: var(--color-ice);
+  --color-brass-bright: var(--color-ice-bright);
+  --color-brass-deep: var(--color-ice-deep);
+  --color-flame: var(--color-ice);
 
-  /*
-   * The control panel's own signals, taken from the MT5 Control reference:
-   * a warm flame for section heads, a flat go-green and a stop-red for the
-   * two buttons that matter most.
-   */
-  --color-flame: #f5a524;
-  --color-go: #1fa463;
-  --color-stop: #e5484d;
+  --color-profit: #2dd4a0;
+  --color-loss: #ff6b81;
+  --color-gold: #e9b44c;
+  --color-warn: #f2b84b;
+  --color-go: var(--color-profit);
+  --color-stop: var(--color-loss);
 
-  --color-profit: #22d3a5;
-  --color-loss: #ff5c7a;
-  --color-gold: #f5b93b;
-  --color-warn: #fbbf24;
+  --radius-card: 16px;
+}
 
-  --radius-card: 14px;
+/* Light theme: the same names, read by every component unchanged. */
+:root[data-theme='light'] {
+  --color-base: #f2f4f8;
+  --color-surface: #ffffff;
+  --color-surface-2: #f6f8fb;
+  --color-surface-3: #eceff5;
+  --color-well: #f3f5f9;
+  --color-line: #e2e7ee;
+  --color-line-strong: #cfd7e2;
+  --color-line-soft: #e2e7ee99;
+
+  --color-ink: #0d1726;
+  --color-ink-dim: #435168;
+  --color-ink-muted: #76839a;
+  --color-ink-faint: #c2cad6;
+
+  --color-ice: #1778b3;
+  --color-ice-bright: #3a9bd5;
+  --color-ice-deep: #0f5a88;
+  --color-on-ice: #ffffff;
+
+  --color-profit: #0e9a6c;
+  --color-loss: #d9405c;
+  --color-gold: #a86c12;
+  --color-warn: #a86c12;
+
+  color-scheme: light;
+}
+
+:root {
+  color-scheme: dark;
+  /* Depth, per theme: dark surfaces are lit from above, light ones float. */
+  --shadow-card: inset 0 1px 0 0 rgba(255, 255, 255, 0.035), 0 1px 2px 0 rgba(0, 0, 0, 0.5), 0 16px 40px -28px rgba(0, 0, 0, 0.85);
+  --shadow-pop: 0 1px 2px 0 rgba(0, 0, 0, 0.5), 0 24px 56px -24px rgba(0, 0, 0, 0.9);
+  --page-glow: radial-gradient(1200px 520px at 50% -140px, rgba(124, 200, 244, 0.075), transparent 70%);
+  --focus-ring: 0 0 0 2px var(--color-base), 0 0 0 4px color-mix(in oklab, var(--color-ice) 70%, transparent);
+}
+
+:root[data-theme='light'] {
+  --shadow-card: 0 1px 2px 0 rgba(16, 24, 40, 0.05), 0 12px 32px -24px rgba(16, 24, 40, 0.22);
+  --shadow-pop: 0 1px 2px 0 rgba(16, 24, 40, 0.06), 0 24px 56px -24px rgba(16, 24, 40, 0.28);
+  --page-glow: radial-gradient(1200px 520px at 50% -160px, rgba(23, 120, 179, 0.07), transparent 70%);
 }
 
 @layer base {
@@ -74,36 +118,17 @@
   }
 
   body {
-    background:
-      radial-gradient(1150px 640px at 84% -12%, rgba(224, 172, 87, 0.085), transparent 62%),
-      radial-gradient(880px 600px at 2% 6%, rgba(132, 148, 170, 0.075), transparent 58%),
-      radial-gradient(1000px 520px at 48% 114%, rgba(192, 139, 60, 0.06), transparent 68%),
-      /* A vignette keeps the eye in the middle of the screen. */
-      radial-gradient(140% 120% at 50% 50%, transparent 52%, rgba(0, 0, 0, 0.55) 100%),
-      var(--color-base);
+    background: var(--page-glow), var(--color-base);
     background-attachment: fixed;
     color: var(--color-ink);
     font-family: var(--font-sans);
+    font-feature-settings: 'ss01' on;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     overscroll-behavior-y: none;
     /* iOS keeps text from inflating in landscape without disabling zoom. */
     -webkit-text-size-adjust: 100%;
-  }
-
-  /*
-   * A single stop of grain over the whole page. Large flat darks band on OLED
-   * phones and read as unfinished; a little noise breaks the gradient up and
-   * is what stops the surface looking printed rather than lit.
-   */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    opacity: 0.5;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+    transition: background-color 200ms ease, color 200ms ease;
   }
 
   #root {
@@ -115,22 +140,29 @@
   h1,
   h2,
   h3 {
-    letter-spacing: -0.011em;
+    letter-spacing: -0.015em;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-ice) 30%, transparent);
   }
 
   ::-webkit-scrollbar {
-    width: 9px;
-    height: 9px;
+    width: 10px;
+    height: 10px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #2e343d;
+    background: var(--color-line-strong);
+    border: 3px solid transparent;
+    background-clip: padding-box;
     border-radius: 99px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #3d444f;
+    background: var(--color-ink-faint);
+    background-clip: padding-box;
   }
 
   input,
@@ -139,49 +171,51 @@
     font-family: inherit;
   }
 
-  /* Numeric fields read as a terminal, not as prose. */
+  /*
+   * Figures that line up. Hanken's default digits are all one width, so
+   * prices do not jitter as they tick, in the same face as the words.
+   */
   .tabular {
-    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;
   }
 }
 
 @layer components {
-  /*
-   * Panels are lit from above: a hairline highlight along the top edge, a
-   * shadow that falls away below. It is what separates a surface sitting on
-   * the page from a rectangle drawn on it.
-   */
+  /* A surface sitting on the page: one step lighter (or white), a hairline, a soft shadow. */
   .card {
     position: relative;
-    background: linear-gradient(162deg, rgba(25, 29, 35, 0.95), rgba(16, 19, 23, 0.96));
+    background: var(--color-surface);
     border: 1px solid var(--color-line);
     border-radius: var(--radius-card);
-    box-shadow:
-      inset 0 1px 0 0 rgba(255, 236, 205, 0.06),
-      0 1px 2px -1px rgba(0, 0, 0, 0.9),
-      0 22px 48px -32px rgba(0, 0, 0, 0.95);
+    box-shadow: var(--shadow-card);
   }
 
   .card-flush {
-    background: rgba(17, 20, 25, 0.7);
+    background: var(--color-surface-2);
     border: 1px solid var(--color-line);
-    border-radius: var(--radius-card);
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.028);
+    border-radius: 14px;
+  }
+
+  /* Inset areas inside a card: inputs, readouts, lists. */
+  .well {
+    background: var(--color-well);
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
   }
 
   .chip {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.15rem 0.55rem;
+    padding: 0.2rem 0.6rem;
     border-radius: 999px;
-    font-size: 0.6875rem;
+    font-size: 0.71875rem;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    letter-spacing: 0.005em;
+    line-height: 1.35;
     border: 1px solid transparent;
+    white-space: nowrap;
   }
 
   .btn {
@@ -189,7 +223,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    border-radius: 10px;
+    border-radius: 11px;
     padding: 0.55rem 0.95rem;
     font-size: 0.8125rem;
     font-weight: 600;
@@ -199,6 +233,7 @@
     transition:
       background 140ms ease,
       border-color 140ms ease,
+      color 140ms ease,
       transform 90ms ease,
       box-shadow 140ms ease,
       opacity 140ms ease;
@@ -208,11 +243,11 @@
   .btn:focus-visible,
   .field:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px var(--color-base), 0 0 0 4px rgba(224, 172, 87, 0.75);
+    box-shadow: var(--focus-ring);
   }
   .btn:hover:not(:disabled) {
     background: var(--color-surface-3);
-    border-color: #39404a;
+    border-color: var(--color-line-strong);
   }
   .btn:active:not(:disabled) {
     transform: translateY(1px);
@@ -222,44 +257,91 @@
     cursor: not-allowed;
   }
 
-  .btn-primary {
-    background: linear-gradient(180deg, var(--color-brass), var(--color-brass-deep));
-    border-color: #cf9a4d;
-    color: #171104;
-    box-shadow:
-      inset 0 1px 0 0 rgba(255, 236, 205, 0.32),
-      0 10px 28px -16px rgba(192, 139, 60, 0.55);
+  /* The one filled button colour: ice. */
+  .btn-primary,
+  .btn-go {
+    background: var(--color-ice);
+    border-color: transparent;
+    color: var(--color-on-ice);
+    box-shadow: 0 8px 22px -14px color-mix(in oklab, var(--color-ice) 90%, transparent);
   }
-  .btn-primary:hover:not(:disabled) {
-    background: linear-gradient(180deg, var(--color-brass-bright), #916827);
-    border-color: #e6b769;
+  .btn-primary:hover:not(:disabled),
+  .btn-go:hover:not(:disabled) {
+    background: var(--color-ice-bright);
+    border-color: transparent;
+  }
+  :root[data-theme='light'] .btn-primary:hover:not(:disabled),
+  :root[data-theme='light'] .btn-go:hover:not(:disabled) {
+    background: var(--color-ice-deep);
+  }
+  /* A filled button that cannot be pressed goes neutral, so a faded ice
+     never reads as an action on offer. */
+  .btn-primary:disabled,
+  .btn-go:disabled,
+  .btn-stop:disabled {
+    background: var(--color-surface-2);
+    border-color: var(--color-line);
+    color: var(--color-ink-muted);
+    box-shadow: none;
+    opacity: 1;
+  }
+
+  /* Stop is a warning, not a second accent: tinted, not filled. */
+  .btn-stop {
+    background: color-mix(in oklab, var(--color-loss) 12%, var(--color-surface));
+    border-color: color-mix(in oklab, var(--color-loss) 35%, transparent);
+    color: var(--color-loss);
+  }
+  .btn-stop:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--color-loss) 20%, var(--color-surface));
+    border-color: color-mix(in oklab, var(--color-loss) 55%, transparent);
   }
 
   .btn-buy {
-    background: linear-gradient(180deg, #1fbf95, #10906f);
-    border-color: #1fbf95;
-    color: #04140f;
+    background: var(--color-profit);
+    border-color: transparent;
+    color: #03150e;
   }
   .btn-sell {
-    background: linear-gradient(180deg, #ff6b86, #d93a5b);
-    border-color: #ff6b86;
-    color: #1a0409;
+    background: var(--color-loss);
+    border-color: transparent;
+    color: #1d0409;
   }
+  :root[data-theme='light'] .btn-buy,
+  :root[data-theme='light'] .btn-sell {
+    color: #ffffff;
+  }
+  .btn-buy:hover:not(:disabled),
+  .btn-sell:hover:not(:disabled) {
+    filter: brightness(1.06);
+    border-color: transparent;
+  }
+  .btn-buy:hover:not(:disabled) {
+    background: var(--color-profit);
+  }
+  .btn-sell:hover:not(:disabled) {
+    background: var(--color-loss);
+  }
+
   .btn-ghost {
     background: transparent;
+    border-color: transparent;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--color-surface-2);
+    border-color: var(--color-line);
   }
 
   .field {
     width: 100%;
-    background: #0d1014;
+    background: var(--color-well);
     border: 1px solid var(--color-line);
-    border-radius: 10px;
-    padding: 0.55rem 0.7rem;
+    border-radius: 11px;
+    padding: 0.6rem 0.75rem;
     /* 16px stops iOS zooming the page when a field takes focus. */
     font-size: 16px;
     color: var(--color-ink);
     outline: none;
-    box-shadow: inset 0 1px 2px 0 rgba(0, 0, 0, 0.55);
     transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
   }
   @media (min-width: 640px) {
@@ -268,51 +350,55 @@
     }
   }
   .field:hover:not(:focus) {
-    border-color: #343b45;
+    border-color: var(--color-line-strong);
   }
   .field:focus {
-    border-color: #8a6f42;
-    background: #0f1116;
-    box-shadow:
-      inset 0 1px 2px 0 rgba(0, 0, 0, 0.5),
-      0 0 0 3px rgba(192, 139, 60, 0.16);
+    border-color: var(--color-ice);
+    background: var(--color-surface);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-ice) 18%, transparent);
   }
   .field::placeholder {
-    color: #575d66;
+    color: var(--color-ink-muted);
+    opacity: 0.8;
+  }
+  select.field {
+    appearance: none;
+    padding-right: 2.25rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='m6 8 4 4 4-4' stroke='%237d8899' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.7rem center;
+    background-size: 1rem;
   }
 
+  /* Field labels: sentence case, quiet, close to what they name. */
   .label {
     display: block;
-    font-size: 0.625rem;
-    font-weight: 600;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
-    color: var(--color-ink-muted);
+    font-size: 0.78125rem;
+    font-weight: 500;
+    color: var(--color-ink-dim);
     margin-bottom: 0.4rem;
   }
 
-  /* The chart panel is the instrument; it gets a deeper well than a card. */
-  .chart-well {
-    position: relative;
-    border-radius: 12px;
-    background:
-      radial-gradient(130% 90% at 50% 108%, rgba(192, 139, 60, 0.07), transparent 62%),
-      radial-gradient(120% 80% at 50% 0%, rgba(150, 165, 190, 0.05), transparent 70%),
-      #090a0d;
-    box-shadow:
-      inset 0 0 0 1px rgba(42, 45, 52, 0.9),
-      inset 0 22px 44px -34px rgba(224, 172, 87, 0.4);
+  /* Small section eyebrows, the one place capitals are used. */
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-ink-muted);
   }
 
-  /* The header carries a hairline of brass, like a rule under a masthead. */
+  /* The chart panel is the instrument; it sits in a well, not a card. */
+  .chart-well {
+    position: relative;
+    border-radius: 14px;
+    background: var(--color-well);
+    box-shadow: inset 0 0 0 1px var(--color-line);
+  }
+
+  /* Kept for the masthead: a hairline in the accent, fading out. */
   .brass-rule {
-    background-image: linear-gradient(
-      90deg,
-      transparent,
-      rgba(192, 139, 60, 0.5) 18%,
-      rgba(192, 139, 60, 0.22) 52%,
-      transparent
-    );
+    background-image: linear-gradient(90deg, transparent, color-mix(in oklab, var(--color-ice) 40%, transparent) 20%, transparent 80%);
   }
 
   /*
@@ -337,23 +423,23 @@
 
   .grid-lines {
     background-image:
-      linear-gradient(rgba(39, 44, 52, 0.5) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(39, 44, 52, 0.5) 1px, transparent 1px);
+      linear-gradient(var(--color-line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-line-soft) 1px, transparent 1px);
     background-size: 48px 40px;
   }
-}
 
-@layer components {
-  /* Section heads on the control panel: flame-coloured, set in capitals. */
+  /* Section titles: sentence case, an icon in the accent. */
   .panel-head {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    font-size: 0.95rem;
-    font-weight: 800;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--color-flame);
+    font-size: 1rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    color: var(--color-ink);
+  }
+  .panel-head > svg {
+    color: var(--color-ice);
   }
 
   .panel-field-label {
@@ -362,32 +448,10 @@
   }
 
   .panel-field-value {
-    margin-top: 0.35rem;
-    padding-left: 0.9rem;
+    margin-top: 0.25rem;
     font-size: 0.9375rem;
     font-weight: 600;
     color: var(--color-ink);
-  }
-
-  .btn-go {
-    background: linear-gradient(180deg, #25b870, var(--color-go));
-    border-color: #2cc47a;
-    color: #04130b;
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.22), 0 12px 28px -16px rgba(31, 164, 99, 0.8);
-  }
-  .btn-go:hover:not(:disabled) {
-    background: linear-gradient(180deg, #2cc47a, #1b9459);
-    border-color: #3ad088;
-  }
-  .btn-stop {
-    background: linear-gradient(180deg, #f05a5f, var(--color-stop));
-    border-color: #f06a6e;
-    color: #1d0405;
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.2), 0 12px 28px -16px rgba(229, 72, 77, 0.8);
-  }
-  .btn-stop:hover:not(:disabled) {
-    background: linear-gradient(180deg, #f46d71, #cc3b40);
-    border-color: #f5878a;
   }
 
   .toast {
@@ -400,25 +464,36 @@
     border-radius: 12px;
     font-size: 0.8125rem;
     font-weight: 600;
-    background: #f1f0f7;
-    color: #16181d;
-    box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(0, 0, 0, 0.08);
+    background: var(--color-ink);
+    color: var(--color-base);
+    box-shadow: var(--shadow-pop);
     animation: toast-in 180ms ease-out;
   }
   .toast-error {
-    background: #fff1f2;
-    color: #6b0f1c;
+    background: var(--color-loss);
+    color: #ffffff;
   }
 
   .dropzone {
-    border: 1.5px dashed #3a4049;
+    border: 1.5px dashed var(--color-line-strong);
     border-radius: 14px;
-    background: rgba(13, 16, 20, 0.7);
+    background: var(--color-well);
     transition: border-color 140ms ease, background 140ms ease;
   }
   .dropzone[data-active='true'] {
-    border-color: var(--color-flame);
-    background: rgba(245, 165, 36, 0.06);
+    border-color: var(--color-ice);
+    background: color-mix(in oklab, var(--color-ice) 7%, var(--color-well));
+  }
+
+  /* A segmented control's selected segment. */
+  .segment-on {
+    background: var(--color-surface-3);
+    color: var(--color-ink);
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3), inset 0 0 0 1px var(--color-line-strong);
+  }
+  :root[data-theme='light'] .segment-on {
+    background: var(--color-surface);
+    box-shadow: 0 1px 2px 0 rgba(16, 24, 40, 0.08), inset 0 0 0 1px var(--color-line);
   }
 }
 
@@ -435,13 +510,13 @@
 
 @keyframes pulse-ring {
   0% {
-    box-shadow: 0 0 0 0 rgba(34, 211, 165, 0.5);
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-profit) 50%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 7px rgba(34, 211, 165, 0);
+    box-shadow: 0 0 0 7px color-mix(in oklab, var(--color-profit) 0%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(34, 211, 165, 0);
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-profit) 0%, transparent);
   }
 }
 
@@ -451,7 +526,7 @@
 
 @keyframes flash-up {
   from {
-    background-color: rgba(34, 211, 165, 0.22);
+    background-color: color-mix(in oklab, var(--color-profit) 22%, transparent);
   }
   to {
     background-color: transparent;
@@ -459,7 +534,7 @@
 }
 @keyframes flash-down {
   from {
-    background-color: rgba(255, 92, 122, 0.22);
+    background-color: color-mix(in oklab, var(--color-loss) 22%, transparent);
   }
   to {
     background-color: transparent;
@@ -478,5 +553,8 @@
   .flash-up,
   .flash-down {
     animation: none;
+  }
+  body {
+    transition: none;
   }
 }

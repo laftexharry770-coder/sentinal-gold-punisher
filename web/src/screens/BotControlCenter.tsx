@@ -81,12 +81,12 @@ export function BotControlCenter() {
             </button>
           </div>
         }
-        bodyClass="p-4 space-y-3"
+        bodyClass="px-5 pb-5 pt-3 space-y-3"
       >
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
           <StatTile
             label="Status"
-            value={stats?.running ? 'RUNNING' : 'STOPPED'}
+            value={stats?.running ? 'Running' : 'Stopped'}
             tone={stats?.running ? 'profit' : 'neutral'}
             sub={stats?.running ? `up ${uptime(stats.startedAt)}` : 'bot stopped'}
           />
@@ -142,15 +142,15 @@ export function BotControlCenter() {
                 </div>
                 <div className="tabular mt-2.5 grid grid-cols-3 gap-2 border-t border-[var(--color-line)] pt-2 text-xs">
                   <div>
-                    <p className="text-[0.625rem] uppercase text-[var(--color-ink-muted)]">Equity</p>
+                    <p className="text-[0.6875rem] text-[var(--color-ink-muted)]">Equity</p>
                     <p className="font-medium">{formatMoney(account.equity)}</p>
                   </div>
                   <div>
-                    <p className="text-[0.625rem] uppercase text-[var(--color-ink-muted)]">Floating</p>
+                    <p className="text-[0.6875rem] text-[var(--color-ink-muted)]">Floating</p>
                     <Money value={floating} />
                   </div>
                   <div>
-                    <p className="text-[0.625rem] uppercase text-[var(--color-ink-muted)]">Legs</p>
+                    <p className="text-[0.6875rem] text-[var(--color-ink-muted)]">Legs</p>
                     <p className="font-medium">{accountPositions.length}</p>
                   </div>
                 </div>
